@@ -1760,10 +1760,10 @@
     "chapter_id": "1222249920",
     "title": "独立实践项目：在虚拟机中安装  Windows操作系统",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -1772,33 +1772,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:58:39.167173+00:00",
+      "run_id": "37938335725",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T11:27:13.267990+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "37938335725",
+      "observed_at_utc": "2026-10-09T13:58:39.167173+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "e3fba9ecae79ec1ee3e9e756e9b50b1f"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T11:27:13.267993+00:00"
+      "occurred_at_utc": "2026-10-09T13:58:39.167180+00:00"
     },
     "created_at_utc": "2026-10-08T11:27:13.267996+00:00",
-    "updated_at_utc": "2026-10-08T11:27:13.267996+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-09T13:58:39.167173+00:00",
+    "last_run_id": "37938335725",
+    "last_run_at_utc": "2026-10-09T13:58:39.167173+00:00",
+    "last_started_at": "2026-10-09T13:58:39.167173+00:00",
+    "last_finished_at": "2026-10-09T13:58:39.167173+00:00",
+    "last_success_at_utc": "2026-10-09T13:58:39.167173+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 8,
     "_cell_idx": 8,
@@ -1810,10 +1812,10 @@
     "chapter_id": "1222249923",
     "title": "任务3.1 掌握 WPS文档编辑排版技法",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "PENDING",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -1822,38 +1824,40 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "CONFLICT",
+      "verified_at_utc": "2026-10-09T14:07:01.962295+00:00",
+      "run_id": "",
+      "source_detail": "live re-check confirmed pending"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T11:27:13.268005+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "CONFLICT",
+      "source": "isPassed",
+      "run_id": "37938335725",
+      "observed_at_utc": "2026-10-09T14:07:01.962288+00:00",
+      "detail": "live verification: now pending",
+      "passed_object_ids": [
+        "b5b1c4ae2ff7078326c0ece6c30f351d"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T11:27:13.268007+00:00"
+      "occurred_at_utc": "2026-10-09T14:05:15.084462+00:00"
     },
     "created_at_utc": "2026-10-08T11:27:13.268012+00:00",
-    "updated_at_utc": "2026-10-08T11:27:13.268012+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-09T14:07:01.962295+00:00",
+    "last_run_id": "37938335725",
+    "last_run_at_utc": "2026-10-09T14:05:15.084455+00:00",
+    "last_started_at": "2026-10-09T14:05:15.084455+00:00",
+    "last_finished_at": "2026-10-09T14:05:15.084455+00:00",
+    "last_success_at_utc": "2026-10-09T14:05:15.084455+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 10,
     "_cell_idx": 10,
-    "rollback_count": 0,
-    "last_rollback_at_utc": ""
+    "rollback_count": 1,
+    "last_rollback_at_utc": "2026-10-09T14:07:01.962283+00:00"
   },
   "1222249923:video2": {
     "task_id": "1222249923:video2",
@@ -2370,7 +2374,7 @@
     "chapter_id": "1222249900",
     "title": "任务2.1 走近神奇的操作系统",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 0,
     "attempts": 0,
@@ -2382,17 +2386,17 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800879+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
       "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445457+00:00",
-      "detail": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800882+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
       "passed_object_ids": []
     },
     "failure": {
@@ -2420,7 +2424,7 @@
     "chapter_id": "1222249914",
     "title": "任务2.2探秘计算机网络空间",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 0,
     "attempts": 0,
@@ -2432,17 +2436,17 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800886+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
       "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445463+00:00",
-      "detail": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800888+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
       "passed_object_ids": []
     },
     "failure": {
@@ -2470,7 +2474,7 @@
     "chapter_id": "1222249914",
     "title": "任务2.2探秘计算机网络空间",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 0,
     "attempts": 0,
@@ -2482,17 +2486,17 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800891+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
       "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445468+00:00",
-      "detail": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800894+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
       "passed_object_ids": []
     },
     "failure": {
@@ -2520,7 +2524,7 @@
     "chapter_id": "1222249914",
     "title": "任务2.2探秘计算机网络空间",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 0,
     "attempts": 0,
@@ -2532,17 +2536,17 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800896+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
       "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445473+00:00",
-      "detail": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800898+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
       "passed_object_ids": []
     },
     "failure": {
@@ -2570,10 +2574,10 @@
     "chapter_id": "1222249914",
     "title": "任务2.2探秘计算机网络空间",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -2582,33 +2586,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:45:44.423053+00:00",
+      "run_id": "37938335725",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445479+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "37938335725",
+      "observed_at_utc": "2026-10-09T13:45:44.423053+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "074bb430b55fec6a5940d172a917af71"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445480+00:00"
+      "occurred_at_utc": "2026-10-09T13:45:44.423060+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445481+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445481+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-09T13:45:44.423053+00:00",
+    "last_run_id": "37938335725",
+    "last_run_at_utc": "2026-10-09T13:45:44.423053+00:00",
+    "last_started_at": "2026-10-09T13:45:44.423053+00:00",
+    "last_finished_at": "2026-10-09T13:45:44.423053+00:00",
+    "last_success_at_utc": "2026-10-09T13:45:44.423053+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 7,
     "_cell_idx": 7,
@@ -4862,6 +4868,106 @@
     "last_failure_at_utc": null,
     "_ch_idx": 33,
     "_cell_idx": 33,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249868:video3": {
+    "task_id": "1222249868:video3",
+    "chapter_id": "1222249868",
+    "title": "任务1.2 探索信息的数字化表达",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800850+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800854+00:00",
+      "detail": "server finished marker on the exact point (mint-time heal)",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-09T13:43:05.800843+00:00"
+    },
+    "created_at_utc": "2026-10-09T13:43:05.800845+00:00",
+    "updated_at_utc": "2026-10-09T13:43:05.800845+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 2,
+    "_cell_idx": 2,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249868:video4": {
+    "task_id": "1222249868:video4",
+    "chapter_id": "1222249868",
+    "title": "任务1.2 探索信息的数字化表达",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T13:43:05.800867+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-09T13:43:05.800870+00:00",
+      "detail": "server finished marker on the exact point (mint-time heal)",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-09T13:43:05.800863+00:00"
+    },
+    "created_at_utc": "2026-10-09T13:43:05.800865+00:00",
+    "updated_at_utc": "2026-10-09T13:43:05.800865+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 2,
+    "_cell_idx": 2,
     "rollback_count": 0,
     "last_rollback_at_utc": ""
   }

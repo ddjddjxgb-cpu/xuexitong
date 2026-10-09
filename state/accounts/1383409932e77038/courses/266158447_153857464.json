@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "status": "ACTIVE",
-  "run_count": 13,
-  "success_count": 8,
+  "run_count": 16,
+  "success_count": 11,
   "failure_count": 0,
   "course_identity": {
     "course_id": "266158447",
@@ -16,13 +16,13 @@
   "progress": {
     "completed": 0,
     "total": 35,
-    "last_completed_task": "1222249900",
+    "last_completed_task": "1222249923",
     "active_task": null
   },
-  "last_run": "2026-10-09T06:15:05.559404+00:00",
-  "last_success": "2026-10-09T06:15:05.559404+00:00",
+  "last_run": "2026-10-09T14:05:15.089374+00:00",
+  "last_success": "2026-10-09T14:05:15.089374+00:00",
   "last_failure": "2026-10-08T15:57:57.213100+00:00",
-  "last_completed_task": "1222249900",
+  "last_completed_task": "1222249923",
   "history": [
     {
       "run_at_utc": "2026-10-08T11:23:06.093583+00:00",
@@ -114,18 +114,39 @@
       "passed": true,
       "verdict": "PASS",
       "chapter_id": "1222249900"
+    },
+    {
+      "run_at_utc": "2026-10-09T13:45:44.427857+00:00",
+      "timing_s": 158.5,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249914"
+    },
+    {
+      "run_at_utc": "2026-10-09T13:58:39.171746+00:00",
+      "timing_s": 619.3,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-09T14:05:15.089374+00:00",
+      "timing_s": 267.3,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249923"
     }
   ],
   "scheduler": {
-    "last_scheduled_at": "2026-10-09T06:15:05.814626+00:00",
-    "last_started_at": "2026-10-09T06:15:05.814626+00:00",
-    "last_finished_at": "2026-10-09T06:15:05.817104+00:00",
+    "last_scheduled_at": "2026-10-09T14:07:01.968710+00:00",
+    "last_started_at": "2026-10-09T14:07:01.968710+00:00",
+    "last_finished_at": "2026-10-09T14:07:01.968944+00:00",
     "last_result": "SUCCESS",
-    "last_run_id": "improve-verify",
+    "last_run_id": "37938335725",
     "last_trigger": "manual",
     "consecutive_failures": 0,
-    "execution_id": "improve-verify",
-    "attempt": 12,
+    "execution_id": "37938335725",
+    "attempt": 13,
     "blocked_since": null,
     "blocked_hits": 0,
     "blocked_retry_interval": 0
