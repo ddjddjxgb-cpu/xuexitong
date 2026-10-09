@@ -322,16 +322,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mvp-evidence-${{ github.run_id }}
+          # 隐私收窄（2026-10-09 审查）：不上传截图（diag_*.png 含真实姓名）、
+          # 不上传 chapter_*.json（证据含 enc/openc 签名 URL）、不上传 state//app/。
+          # 保留：汇总结果与调度器日志（已核无凭据/签名/姓名）。
           path: |
             evidence/result*.json
             evidence/*.scheduler.stdout.log
-          # 隐私收窄（2026-10-09 审查）：
-          # 1. 截图（diag_*.png）含学习通页面显示的【真实姓名】→ 不上传
-          # 2. chapter_*.json 证据里存有含 enc/openc 签名的课程 URL → 不上传
-          # 3. state/、app/ 与公共仓库内容重复且 state 含运行期数据 → 不上传
-          # 保留：汇总结果与调度器日志（已核无凭据/签名/姓名）
-            resolvers/
-            /tmp/diag_*.png
           retention-days: 30
 
       # ── 最终判定：用 exit_code 控制红绿 ───────────────────────────
