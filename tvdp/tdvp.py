@@ -1,0 +1,1620 @@
+"""TDVP Module — Task Discovery & Verification Protocol
+
+E7: 两阶段探针协议（Passive Probe + Active Probe）
+-----------------------------------------------
+1. Passive Probe（低成本）：从 studentstudy 页面解析章节/任务列表和 UI 完成标记
+2. Active Probe（高成本）：对 pending/unknown 任务调用真实 Runtime 验证
+
+注意：TDVP 内置于 Scheduler，用户只需传入 course_url，无需关心 chapter_id。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Literal, Optional
+
+# 浏览器启动参数的平台收敛（--display 是 Linux/X11 专用，Windows 不能传）。
+# 本模块有 4 处 launch 点，统一由 utils/browser_factory.display_args() 判定。
+from utils.browser_factory import display_args
+
+# ── 类型定义 ───────────────────────────────────────────────────────
+TaskStatus = Literal["COMPLETED", "PENDING", "UNKNOWN"]
+ProbeSource = Literal["UI", "SERVER_VERIFIED", "UNKNOWN"]
+TaskType = Literal["video", "quiz", "discussion", "other"]
+
+
+# ── 数据模型 ───────────────────────────────────────────────────────
+
+@dataclass
+class TaskEvidence:
+    status: TaskStatus
+    confidence: ProbeSource
+    source_detail: str
+    observed_at_utc: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class TaskInfo:
+    task_id: str
+    chapter_id: str
+    title: str
+    task_type: TaskType
+    status: TaskStatus
+    confidence: ProbeSource
+    source_detail: str
+    evidence: TaskEvidence
+    discovered_at_utc: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    _ch_idx: int = field(default=0, repr=False)
+    _cell_idx: int = field(default=0, repr=False)
+
+    @property
+    def key(self) -> str:
+        return self.task_id
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "chapter_id": self.chapter_id,
+            "title": self.title,
+            "task_type": self.task_type,
+            "status": self.status,
+            "confidence": self.confidence,
+            "source_detail": self.source_detail,
+            "evidence": self.evidence.to_dict(),
+            "discovered_at_utc": self.discovered_at_utc,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TaskInfo":
+        ev = d.pop("evidence", None)
+        if ev is None:
+            ev = TaskEvidence(
+                status=d.get("status", "UNKNOWN"),
+                confidence=d.get("confidence", "UNKNOWN"),
+                source_detail=d.get("source_detail", ""),
+            ).to_dict()
+        return cls(
+            task_id=d["task_id"],
+            chapter_id=d.get("chapter_id", d["task_id"]),
+            title=d.get("title", ""),
+            task_type=d.get("task_type", "other"),
+            status=d.get("status", "UNKNOWN"),
+            confidence=d.get("confidence", "UNKNOWN"),
+            source_detail=d.get("source_detail", ""),
+            evidence=TaskEvidence(**ev) if isinstance(ev, dict) else TaskEvidence("UNKNOWN", "UNKNOWN", ""),
+            discovered_at_utc=d.get("discovered_at_utc", datetime.now(timezone.utc).isoformat()),
+        )
+
+
+@dataclass
+class ChapterInfo:
+    chapter_id: str
+    title: str
+    tasks: list[TaskInfo] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "chapter_id": self.chapter_id,
+            "title": self.title,
+            "task_count": len(self.tasks),
+            "tasks": [t.to_dict() for t in self.tasks],
+        }
+
+
+@dataclass
+class CourseDiscovery:
+    course_id: str
+    clazz_id: str
+    course_key: str
+    chapters: list[ChapterInfo]
+    discovered_at_utc: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @property
+    def all_tasks(self) -> list[TaskInfo]:
+        tasks = []
+        for ch in self.chapters:
+            tasks.extend(ch.tasks)
+        return tasks
+
+    @property
+    def completed_tasks(self) -> list[TaskInfo]:
+        return [t for t in self.all_tasks if t.status == "COMPLETED"]
+
+    @property
+    def pending_tasks(self) -> list[TaskInfo]:
+        return [t for t in self.all_tasks if t.status == "PENDING"]
+
+    @property
+    def unknown_tasks(self) -> list[TaskInfo]:
+        return [t for t in self.all_tasks if t.status == "UNKNOWN"]
+
+    def to_dict(self) -> dict:
+        return {
+            "course_key": self.course_key,
+            "course_id": self.course_id,
+            "clazz_id": self.clazz_id,
+            "chapter_count": len(self.chapters),
+            "task_count": len(self.all_tasks),
+            "completed_count": len(self.completed_tasks),
+            "pending_count": len(self.pending_tasks),
+            "unknown_count": len(self.unknown_tasks),
+            "chapters": [c.to_dict() for c in self.chapters],
+            "discovered_at_utc": self.discovered_at_utc,
+        }
+
+
+# ── Passive Probe ──────────────────────────────────────────────────
+
+def _tdvp_course_params(params: dict) -> "CourseParams":
+    """把 _parse_url_params 的 dict 转成 CourseParams（复用共享模型，替代 E.* 全局注入）。"""
+    from models import CourseParams
+    return CourseParams(
+        course_id=params.get("course_id", ""),
+        clazz_id=params.get("clazz_id", ""),
+        cpi=params.get("cpi", ""),
+        enc=params.get("enc", ""),
+        chapter_id=params.get("chapter_id", ""),
+        openc=params.get("openc"),
+        hidetype=params.get("hidetype") or "0",
+    )
+
+
+def parse_task_status_from_page(html: str, chapter_id: str) -> list[TaskInfo]:
+    """从 studentstudy 页面 HTML 解析任务列表。
+
+    支持学习通实际 UI 标记：
+      - 标题后跟 "已完成" → COMPLETED(UI)
+      - 标题后跟 "N个待完成任务点" → PENDING(UI)
+      - 标题后紧跟 >数字< → COMPLETED if >0 else PENDING
+      - 其他 → UNKNOWN
+    """
+    tasks = []
+
+    pattern_title = re.compile(
+        r'([\d]+(?:\.[\d]+)?)\s+([\u4e00-\u9fff][\u4e00-\u9fff\s\w]{1,30})',
+        re.UNICODE
+    )
+    matches = list(pattern_title.finditer(html))
+
+    for m in matches:
+        num = m.group(1)
+        title = m.group(2)
+        start = html.find(num)
+        if start == -1:
+            continue
+        snippet = html[start:start+500]
+
+        if "已完成" in snippet[:200]:
+            status, confidence, detail = "COMPLETED", "UI", "标记=已完成"
+        elif re.search(r'(\d+)个待完成', snippet):
+            m2 = re.search(r'(\d+)个待完成', snippet)
+            status, confidence, detail = "PENDING", "UI", f"标记={m2.group(1)}个待完成"
+        elif re.search(r'>\s*(\d+)\s*<', snippet):
+            val = int(re.search(r'>\s*(\d+)\s*<', snippet).group(1))
+            status = "COMPLETED" if val > 0 else "PENDING"
+            confidence = "UI"
+            detail = f"UI marker={val}"
+        else:
+            status, confidence, detail = "UNKNOWN", "UI", "no status marker found"
+
+        task_id = f"{chapter_id}_{num.replace('.', '_')}"
+        tasks.append(TaskInfo(
+            task_id=task_id,
+            chapter_id=chapter_id,
+            title=title.strip(),
+            task_type="video",
+            status=status,
+            confidence=confidence,
+            source_detail=detail,
+            evidence=TaskEvidence(status, confidence, detail),
+        ))
+
+    return tasks
+
+
+_CATALOG_EXTRACT_JS = """
+() => {
+    const results = [];
+    const seenTitles = new Set();
+    const tree = document.querySelector('#coursetree');
+    if (tree) {
+        const allCells = tree.querySelectorAll(':scope > ul > li .posCatalog_select:not(.firstLayer)');
+        allCells.forEach((cell, gi) => {
+            const nameEl = cell.querySelector('.posCatalog_name');
+            const title = nameEl
+                ? (nameEl.title || nameEl.textContent || '').trim()
+                : (cell.textContent || '').trim();
+            if (!title) return;
+            if (seenTitles.has(title)) return;
+            seenTitles.add(title);
+            const text = (cell.textContent || '').replace(/\\s+/g, ' ').trim();
+            let status = 'unknown';
+            if (cell.classList.contains('posCatalog_finish') ||
+                cell.classList.contains('flip') ||
+                cell.querySelector('.icon_Completed') ||
+                /已完成|Completed/i.test(text)) {
+                status = 'completed';
+            } else if (/待完成|未完成|Pending/i.test(text)) {
+                status = 'pending';
+            }
+            let cid = '';
+            const nodeHtml = cell.outerHTML || '';
+            const m1 = nodeHtml.match(/chapterId[=:'"](\\d+)/);
+            const m2 = nodeHtml.match(/data-?chapter[-_]?id[=:'"](\\d+)/);
+            const m3 = nodeHtml.match(/getTeacherAjax\\([^)]*,\\s*'([^']+)'/);
+            const m4 = nodeHtml.match(/getTeacherAjax\\('[^']*',\\s*"([^"]+)"/);
+            if (m1) cid = m1[1];
+            else if (m2) cid = m2[1];
+            else if (m3) cid = m3[1];
+            else if (m4) cid = m4[1];
+            const isActive = cell.classList.contains('posCatalog_active');
+            let jobRemaining = 0;
+            const unf = cell.querySelector('input[type="hidden"][class*="UnfinishCount"], input[type="hidden"][class*="unfinish"], input[name*="job"]');
+            if (unf && unf.value) {
+                jobRemaining = parseInt(unf.value, 10) || 0;
+            }
+            results.push({
+                chapter_id: cid, title: title, status: status,
+                is_active: isActive, chapter_index: gi, cell_index: gi,
+                text: text.slice(0, 150), mirrored: false,
+                job_remaining: jobRemaining,
+            });
+        });
+    }
+    if (results.length === 0) {
+        document.querySelectorAll('a[href*="chapterId"]').forEach(a => {
+            const href = a.href || '';
+            const m = href.match(/chapterId=(\\d+)/);
+            if (!m) return;
+            let container = a.closest('li, .catalog_list, tr, [class*="item"], [class*="node"]') || a.parentElement;
+            const text = container ? (container.innerText || '') : '';
+            results.push({
+                chapter_id: m[1], title: (a.textContent || '').trim(),
+                status: /已完成/.test(text) ? 'completed' : (/待完成/.test(text) ? 'pending' : 'unknown'),
+                is_active: false, chapter_index: 0, cell_index: 0,
+                text: text.slice(0, 150), mirrored: true,
+            });
+        });
+    }
+    return results;
+}
+"""
+
+
+def extract_catalog_from_page(page, course_url: str) -> list[dict]:
+    """从已登录的课程目录页提取章节列表（可在已打开的同 browser 里复用）。
+
+    目录渲染竞态防护：真实站点的 #coursetree 先挂空 `<ul>`，章节节点是异步
+    填充的。若 selector 一附加就提取，极易拿到空（CI/Xvfb 上尤其明显——
+    对应 real run 34564369602「TDVP fetch returned empty」）。这里在首轮取
+    得为空且 #coursetree 已存在时，轮询等 `.posCatalog_select` 出现（最多
+    约 12s）再重取，显著降低「探针空→整轮空抓」抖动。
+    """
+    import time as _time
+    import re as _re
+    chapters = page.evaluate(_CATALOG_EXTRACT_JS)
+
+    if not chapters:
+        # 只等目录树子节点 hydration，不额外开新浏览器
+        try:
+            trees = page.locator("#coursetree").count()
+        except Exception:
+            trees = 0
+        if trees:
+            deadline = _time.time() + 12.0
+            while _time.time() < deadline:
+                try:
+                    cells = page.locator(
+                        "#coursetree .posCatalog_select:not(.firstLayer)").count()
+                except Exception:
+                    cells = 0
+                if cells > 0:
+                    break
+                _time.sleep(1.5)
+            chapters = page.evaluate(_CATALOG_EXTRACT_JS)
+
+    by_title = {}
+    for ch in chapters:
+        t = ch.get("title", "")
+        if not t:
+            continue
+        if t not in by_title or ch.get("chapter_id"):
+            by_title[t] = ch
+    unique = list(by_title.values())
+
+    # 激活节点 chapterId 兜底
+    current_url = page.url
+    url_cid = ""
+    m_url = _re.search(r'chapterId[=:](\d+)', current_url)
+    if m_url:
+        url_cid = m_url.group(1)
+    for ch in unique:
+        if ch.get("is_active") and not ch.get("chapter_id") and url_cid:
+            ch["chapter_id"] = url_cid
+
+    # 点击探测第一个缺 id 的非完成节点（仅切页，不播放）
+    for ch in unique:
+        if ch.get("status") != "completed" and not ch.get("chapter_id") and not ch.get("is_active"):
+            try:
+                clicked = page.evaluate("""(si) => {
+                    const tree = document.querySelector('#coursetree');
+                    if (!tree) return false;
+                    const cells = tree.querySelectorAll('.posCatalog_select:not(.firstLayer)');
+                    const list = Array.from(cells);
+                    const target = list[si];
+                    if (!target) return false;
+                    const name = target.querySelector('.posCatalog_name');
+                    if (!name) return false;
+                    name.click(); return true;
+                }""", ch.get("cell_index", 0))
+                if clicked:
+                    page.wait_for_timeout(4000)
+                    m2 = _re.search(r'chapterId[=:](\d+)', page.url)
+                    if m2:
+                        ch["chapter_id"] = m2.group(1)
+            except Exception:
+                pass
+            break
+    return unique
+
+
+def fetch_course_discovery(course_url: str, cx_user: Optional[str] = None,
+                           cx_pass: Optional[str] = None) -> Optional[list[dict]]:
+    """在浏览器 DOM 中直接提取目录树章节列表 + 状态。
+
+    比 fetch_page_html 更可靠：不依赖 HTML 字符串正则，
+    而是在活的 DOM 里查找所有带 chapterId 的链接和它们的完成状态标记。
+
+    Returns:
+        list of {chapter_id, title, status, text} 或 None
+    """
+    import os
+    user = cx_user or os.environ.get("CX_USER")
+    pw = cx_pass or os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        params = _parse_url_params(course_url)
+        chapter_id = params.get("chapter_id") or ""
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from app import e2_headed_gha as E
+        cp = _tdvp_course_params(params)
+
+        from playwright.sync_api import sync_playwright
+        display = os.environ.get("DISPLAY", ":99")
+
+        with sync_playwright() as pwc:
+            # 走可配层：XUE_BROWSER_CHANNEL / XUE_BROWSER_EXE 在此同样生效
+            # （上游此处硬编码 channel="chromium"，会忽略用户的浏览器选择）
+            from utils.browser_factory import launch_kwargs
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            f"Chrome/{browser.version} Safari/537.36"),
+            )
+            page = ctx.new_page()
+
+            # ── 登录（cookie 优先，无则密码登录）─────────────────
+            from utils.cookie_store import ensure_login
+            base = E.build_base_url(chapter_id, cp)
+            ensure_login(page, ctx, base, user, pw)
+
+            # ── 导航到课程目录页 ──────────────────────────────────
+            page.goto(course_url, wait_until="domcontentloaded", timeout=45000)
+            # 目录树可渲染得慢（偶发空表）；等 selector 出现再提取。
+            try:
+                page.wait_for_selector(
+                    "#coursetree, a[href*='chapterId']",
+                    timeout=30000, state="attached",
+                )
+            except Exception:
+                print("[tdvp] catalog tree selector not found before timeout "
+                      "(still extracting)", file=sys.stderr)
+
+            # ── DOM 提取目录树（借鉴 xuexitongScript/v3：#coursetree 结构）──
+            # 结构： #coursetree > ul > li(章)  →  .posCatalog_select:not(.firstLayer)(小节)
+            #       .posCatalog_active = 当前激活；.posCatalog_name = 标题
+            js_extract = """
+            () => {
+                const results = [];
+                const seenTitles = new Set();
+
+                // 方法1：v3 脚本已知的 #coursetree 结构（超星学生学习页标准目录树）
+                const tree = document.querySelector('#coursetree');
+                if (tree) {
+                    // 全局遍历所有非 firstLayer 的 posCatalog_select（保持 DOM 顺序）
+                    const allCells = tree.querySelectorAll(':scope > ul > li .posCatalog_select:not(.firstLayer)');
+                    allCells.forEach((cell, gi) => {
+                        const nameEl = cell.querySelector('.posCatalog_name');
+                        const title = nameEl
+                            ? (nameEl.title || nameEl.textContent || '').trim()
+                            : (cell.textContent || '').trim();
+                        if (!title) return;
+                        if (seenTitles.has(title)) return;
+                        seenTitles.add(title);
+                        const text = (cell.textContent || '').replace(/\\s+/g, ' ').trim();
+                        let status = 'unknown';
+                        if (cell.classList.contains('posCatalog_finish') ||
+                            cell.classList.contains('flip') ||
+                            cell.querySelector('.icon_Completed') ||
+                            /已完成|Completed/i.test(text)) {
+                            status = 'completed';
+                        } else if (/待完成|未完成|Pending/i.test(text)) {
+                            status = 'pending';
+                        }
+                        // 从节点的 onclick / data 属性提取 chapterId
+                        let cid = '';
+                        const nodeHtml = cell.outerHTML || '';
+                        const m1 = nodeHtml.match(/chapterId[=:'"](\\d+)/);
+                        const m2 = nodeHtml.match(/data-?chapter[-_]?id[=:'"](\\d+)/);
+                        const m3 = nodeHtml.match(/getTeacherAjax\\([^)]*,\\s*'([^']+)'/);
+                        const m4 = nodeHtml.match(/getTeacherAjax\\([^)]*,\\s*"([^"]+)"/);
+                        if (m1) cid = m1[1];
+                        else if (m2) cid = m2[1];
+                        else if (m3) cid = m3[1];
+                        else if (m4) cid = m4[1];
+                        // 从激活状态推断：当前 URL 的 chapterId 就是激活节点
+                        const isActive = cell.classList.contains('posCatalog_active');
+                        // E6.2: 读取本章节「待完成任务点」数量（hidden input），
+                        // 用于把 chapter 拆分为 video + 残余 task，而不是单 TaskInfo。
+                        let jobRemaining = 0;
+                        const unf = cell.querySelector('input[type="hidden"][class*="UnfinishCount"], input[type="hidden"][class*="unfinish"], input[name*="job"]');
+                        if (unf && unf.value) {
+                            jobRemaining = parseInt(unf.value, 10) || 0;
+                        }
+                        results.push({
+                            chapter_id: cid,
+                            title: title,
+                            status: status,
+                            is_active: isActive,
+                            chapter_index: gi,
+                            cell_index: gi,
+                            text: text.slice(0, 150),
+                            mirrored: false,
+                            job_remaining: jobRemaining,   // 待完成任务点数量
+                        });
+                    });
+                }
+
+                // 方法2：回退——任意含 chapterId 的链接
+                if (results.length === 0) {
+                    document.querySelectorAll('a[href*="chapterId"]').forEach(a => {
+                        const href = a.href || '';
+                        const m = href.match(/chapterId=(\\d+)/);
+                        if (!m) return;
+                        let container = a.closest('li, .catalog_list, tr, [class*="item"], [class*="node"]') || a.parentElement;
+                        const text = container ? (container.innerText || '') : '';
+                        results.push({
+                            chapter_id: m[1],
+                            title: (a.textContent || '').trim(),
+                            status: /已完成/.test(text) ? 'completed' : (/待完成/.test(text) ? 'pending' : 'unknown'),
+                            is_active: false,
+                            chapter_index: 0, cell_index: 0,
+                            text: text.slice(0, 150),
+                            mirrored: true
+                        });
+                    });
+                }
+                return results;
+            }
+            """
+            chapters = page.evaluate(js_extract)
+
+            # 去重（同 title 只保留一条；有 chapterId 优先）
+            by_title = {}
+            for ch in chapters:
+                t = ch.get("title", "")
+                if not t:
+                    continue
+                if t not in by_title or ch.get("chapter_id"):
+                    by_title[t] = ch
+            unique = list(by_title.values())
+
+            # 记录当前页面 URL 的 chapterId（激活节点的兜底映射）
+            current_url = page.url
+            url_cid = ""
+            m_url = re.search(r'chapterId[=:](\d+)', current_url)
+            if m_url:
+                url_cid = m_url.group(1)
+            for ch in unique:
+                if ch.get("is_active") and not ch.get("chapter_id") and url_cid:
+                    ch["chapter_id"] = url_cid
+
+            # ── 点击探测：若存在未知节点的 chapter，但没有 chapterId → 点击 → 读 URL ──
+            # 只点击第一个非激活节点，避免干扰页面状态（不播放视频，仅切换加载）
+            picked = None
+            for ch in unique:
+                if ch.get("status") != "completed" and not ch.get("chapter_id") and not ch.get("is_active"):
+                    picked = ch
+                    break
+            if picked and picked.get("chapter_index") is not None:
+                try:
+                    clicked = page.evaluate("""(si) => {
+                        const tree = document.querySelector('#coursetree');
+                        if (!tree) return false;
+                        const cells = tree.querySelectorAll('.posCatalog_select:not(.firstLayer)');
+                        const list = Array.from(cells);
+                        const target = list[si];
+                        if (!target) return false;
+                        const name = target.querySelector('.posCatalog_name');
+                        if (!name) return false;
+                        name.click();
+                        return true;
+                    }""", picked.get("cell_index", 0))
+                    if clicked:
+                        page.wait_for_timeout(4000)
+                        new_url = page.url
+                        m2 = re.search(r'chapterId[=:](\d+)', new_url)
+                        if m2:
+                            picked["chapter_id"] = m2.group(1)
+                except Exception as e:
+                    print(f"[tdvp] click-probe error: {e}", file=sys.stderr)
+
+            # dump 调试信息
+            try:
+                ev_dir = Path("./evidence")
+                ev_dir.mkdir(parents=True, exist_ok=True)
+                (ev_dir / "tdvp_discovery.json").write_text(
+                    json.dumps(unique, ensure_ascii=False, indent=2),
+                    encoding="utf-8")
+                (ev_dir / "tdvp_page.html").write_text(
+                    page.content(), encoding="utf-8")
+            except Exception:
+                pass
+
+            browser.close()
+            return unique
+    except Exception as e:
+        print(f"[tdvp] fetch_course_discovery error: {e}", file=sys.stderr)
+        return None
+
+
+def _corrected_target_cid(target_cid: str, chapters: list[dict]) -> str:
+    """校正深读目标章（纯函数，issue #4 第三层卡点）。
+
+    调用方锚定的 target 章在目录里可能已完成（常见：active_course.raw_url 沿用旧
+    initialize 时的 chapterId 锚点）。读已完成章的点没有意义 —— 它 COMPLETED 不进
+    queue，产出的 video 标记落空，其余待学章全走 other → queue 空 → scheduler 报
+    "No pending task / probe empty"。校正为目录里**第一个未完成章**（status !=
+    completed），让 bootstrap / probe 材料化出的 video 标记落在真正待推进的章上。
+
+    Args:
+        target_cid: 调用方原始锚定的章 id（可为空）。
+        chapters: 目录提取结果 [{chapter_id, title, status, ...}]（可为空）。
+    Returns:
+        应深读的章 id。target 未完成 / 无目录 / 无未完成章时原样返回 target_cid。
+    """
+    if not chapters or not target_cid:
+        return target_cid
+    status_of = {str(c.get("chapter_id") or ""): str(c.get("status") or "")
+                 for c in chapters}
+    if status_of.get(str(target_cid)) != "completed":
+        return target_cid
+    first_pending = next(
+        (str(c.get("chapter_id") or "") for c in chapters
+         if str(c.get("status") or "") != "completed"),
+        None)
+    return first_pending or target_cid
+
+
+def _probe_topk() -> "Optional[int]":
+    """每轮点级深读的章数预算（XUE_PROBE_TOPK）。
+
+    默认 3：exe 双击形态下用户全程盯着浏览器，全量深读所有未完成章（每章
+    ~12s，29 章 ~6min）在用户眼里就是「一直翻下一章、永不播放」。K 章窗口
+    按目录序滑动，随前面章节完成自然前移 —— 窗口外的章保持 <cid>:other 不进
+    队列，但绝不会永远选不到。显式设 0 = 关掉预算（全量，旧行为逃生口）。
+    """
+    import os
+    raw = (os.environ.get("XUE_PROBE_TOPK") or "").strip()
+    if not raw:
+        return 3
+    try:
+        val = int(raw)
+    except ValueError:
+        return 3
+    return val if val > 0 else None
+
+
+def select_chapters_to_read(chapters: "list[dict]|None",
+                            target_cid: str = "",
+                            skip=None) -> "list[dict]":
+    """目录 → 按优先级排序的深读**候选队列**（纯函数，可单测）。
+
+    规则：
+      - 只考虑未完成章（目录 DOM 状态 != completed）；
+      - 预测队首章（target_cid）**必读**且排最前 —— 队首可播性是本轮最重要
+        的信息，Step 4.5 refine / 投递闸门都直接复用它的点级；
+      - skip(cid) 为 True 的章被剔除 —— 跨轮记忆：点级快照已证明该章无视频
+        工作（视频全看完 / 读过且无视频点），不再花 12s 重读（无此机制时，
+        这类章会永久占据窗口槽，窗口停在原地不前移）；
+      - 返回**完整候选队列**；窗口槽位、回填与读取预算由
+        `run_windowed_deep_read` 负责（limit 参数在那里）。
+    """
+    incomplete = [ch for ch in (chapters or [])
+                  if str(ch.get("chapter_id") or "")
+                  and str(ch.get("status") or "") != "completed"]
+    tgt = str(target_cid or "")
+    ordered: list[dict] = []
+    for ch in incomplete:
+        if str(ch.get("chapter_id")) == tgt:
+            ordered.insert(0, ch)
+        else:
+            ordered.append(ch)
+    if skip is not None:
+        def _skipped(ch: dict) -> bool:
+            try:
+                return bool(skip(str(ch.get("chapter_id") or "")))
+            except Exception:
+                return False          # 跳过器自身故障 → 宁可多读不可漏读
+        ordered = [ch for ch in ordered if not _skipped(ch)]
+    return ordered
+
+
+def chapter_video_work_state(points: "list[dict]") -> str:
+    """一章的点级读数里还有没有「未完成的视频工作」（纯函数）。
+
+    返回：
+      "work"    → 有未 finished 的视频点（本章可能要播，占窗口槽）
+      "done"    → 读到了点且没有任何未 finished 的视频点（视频全看完，
+                   或只有非视频点）—— 槽位可回填
+      "unknown" → 没读到任何点 —— 没读到 ≠ 没有，保守占槽；
+                   调用方若确认 cards_frames>=1（帧在而无行）可改判 done
+    """
+    if not points:
+        return "unknown"
+    videos = [p for p in points if p.get("type") == "video"]
+    if not videos:
+        return "done"
+    return "work" if any(not p.get("isFinished") for p in videos) else "done"
+
+
+def run_windowed_deep_read(candidates: "list[dict]", *,
+                           limit: "Optional[int]", read_fn) -> "tuple[list[dict], list[str]]":
+    """窗口化深读循环（纯逻辑，read_fn 注入，可单测）。
+
+    - limit=None → 旧行为：全量读完，无回填、无标记。
+    - 否则：读到「有未完成视频工作」的章占一个窗口槽（共 limit 个）；
+      证明无视频工作的章（点级全 finished / 帧在而无任何点）**不占槽**、
+      队列自动回填；总读取次数封顶 2*limit —— 回填不能变成变相全量。
+    - 「本章没有任何视频点」的章（非视频行 / 帧在而无行）记入 no_video_cids，
+      由调用方落 has_video=False 快照，下一轮窗口直接跳过（跨轮记忆）。
+      视频「全 finished」的章**不**记这里：materialize 会写 has_video=True
+      finished=total，skipper 走「全看完」分支，账本语义更完整。
+    """
+    points: list[dict] = []
+    no_video_cids: list[str] = []
+    budget = None if limit is None else max(1, int(limit)) * 2
+    reads = 0
+    slots = 0
+    queue = list(candidates or [])
+    while queue:
+        if budget is not None and reads >= budget:
+            print(f"[prepare] 深读预算用尽（{reads} 次读取），剩余 "
+                  f"{len(queue)} 章下一轮再读", flush=True)
+            break
+        if limit is not None and slots >= limit:
+            break
+        ch = queue.pop(0)
+        cid = str(ch.get("chapter_id") or "")
+        reads += 1
+        # A4：深读进度可见（第几次读取 / 窗口槽还剩几个）。
+        print(f"[prepare] 深读第 {reads} 次 cid={cid} "
+              f"(槽位 {slots}/{limit if limit is not None else '∞'})…",
+              flush=True)
+        try:
+            pts, cards = read_fn(ch)
+        except Exception as pe:
+            print(f"[tdvp] point-read failed cid={cid} (kept going): {pe}",
+                  file=sys.stderr)
+            continue
+        points.extend(pts or [])
+        state = chapter_video_work_state(pts or [])
+        if limit is not None and (state == "done"
+                                  or (state == "unknown" and cards >= 1)):
+            videos = [p for p in (pts or []) if p.get("type") == "video"]
+            print(f"[prepare] chapter={cid} 无未完成视频工作"
+                  f"(video={len(videos)}, cards={cards}) → 回填槽位",
+                  flush=True)
+            if not videos:
+                no_video_cids.append(cid)
+            continue
+        slots += 1
+    return points, no_video_cids
+
+
+# 进程内窗口跳过器：由 scheduler 注册（只有它有 course_key），深读前剔除
+# 「点级快照已证明无视频工作」的章 —— 无视频章不再永久占槽，窗口真正前移。
+_WINDOW_SKIPPER: "dict[str, object]" = {"fn": None}
+
+
+def set_window_skipper(fn) -> None:
+    """注册/更换窗口跳过器（fn(cid) -> bool）；传 None 关闭。"""
+    _WINDOW_SKIPPER["fn"] = fn
+
+
+def fetch_course_detail_and_verify(
+    course_url: str,
+    target_cid: str = "",
+    cx_user: Optional[str] = None,
+    cx_pass: Optional[str] = None,
+) -> Optional[dict]:
+    """洞3：把「目录发现 + 未完成章点级深读」合并进**一次**浏览器会话。
+
+    只登录一次、只开一个 browser/context，既拿目录树（发现），又对未完成章
+    打开 cards 帧读真实点（L2 深度验证）。相比
+    `fetch_course_discovery` 再单独 `live_verify_chapter`（两次 launch + 两次
+    登录），显著降低 CI 的双开抖动。
+
+    深读范围受 `XUE_PROBE_TOPK`（默认 3）预算约束（见 select_chapters_to_read）：
+    队列由快照逐步点亮，每轮只花 K 章的备课成本就把队首候选验证到位，而不是
+    每轮重建整门课的完整认知。全量旧行为逃生口：XUE_PROBE_TOPK=0。
+
+    Args:
+        target_cid: 预测队首章（必读且优先）；不影响其余窗口章的选取。
+
+    Returns:
+        {"chapters": [...], "points": [{...}] }  （points 为窗口内章的平铺点级，
+        task_id 前缀区分章节；空列表表示没有任何可读点）
+        失败返回 None。
+    """
+    import os
+    user = cx_user or os.environ.get("CX_USER")
+    pw = cx_pass or os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        params = _parse_url_params(course_url)
+        chapter_id = params.get("chapter_id") or ""
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from app import e2_headed_gha as E
+        cp = _tdvp_course_params(params)
+        from playwright.sync_api import sync_playwright
+        import re as _re
+        display = os.environ.get("DISPLAY", ":99")
+
+        with sync_playwright() as pwc:
+            from utils.browser_factory import launch_kwargs  # 可配 XUE_BROWSER_CHANNEL/EXE
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context(
+                viewport={"width": 1440, "height": 900},
+                user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            f"Chrome/{browser.version} Safari/537.36"),
+            )
+            page = ctx.new_page()
+            from utils.cookie_store import ensure_login
+            ensure_login(page, ctx, E.build_base_url(chapter_id, cp), user, pw)
+
+            page.goto(course_url, wait_until="domcontentloaded", timeout=45000)
+            # 目录树渲染可慢于卡片帧（实测：本章点已返回、目录仍空表）。
+            # 不再用固定 5s，改等目录树 selector 出现（最多 ~30s），降低
+            # 'catalog 空 → 整轮空抓' 抖动；超时也照常 extract（fallback 兜底）。
+            try:
+                page.wait_for_selector(
+                    "#coursetree, a[href*='chapterId']",
+                    timeout=30000, state="attached",
+                )
+            except Exception:
+                print("[tdvp] catalog tree selector not found before timeout "
+                      "(still extracting)", file=sys.stderr)
+            chapters = extract_catalog_from_page(page, course_url)
+
+            # ── 窗口化点级深读（2026-10-06 排查定案，取代全量深读）─────────
+            # 旧实现（2026-10-02）一次会话内读**全部 DOM 未完成章**：每章 ~12s，
+            # 29 章实测 ~6min —— 后台 benchmark 里显得稳健，exe 双击形态下用户
+            # 盯着的却是「浏览器一直翻下一章、迟迟不播放」。改为 Top-K 窗口 +
+            # 回填（run_windowed_deep_read）：读到有未完成视频工作的章占槽
+            # （限 K 个），证明无视频工作的章当场回填（读取封顶 2K），无视频
+            # 章跨轮记忆（no_video_cids → 调用方落快照），窗口只前移不停滞。
+            _k = _probe_topk()
+            print(f"[prepare] 点级深读窗口 XUE_PROBE_TOPK={_k}"
+                  + ("" if _k is None else f"（读取封顶 {2 * _k} 次）"),
+                  flush=True)
+            points, no_video_cids = run_windowed_deep_read(
+                select_chapters_to_read(
+                    chapters, target_cid=target_cid,
+                    skip=_WINDOW_SKIPPER["fn"]),
+                limit=_k,
+                read_fn=lambda ch: read_chapter_job_points_diag(
+                    page, str(ch.get("chapter_id") or ""),
+                    params.get("course_id", ""),
+                    params.get("clazz_id", ""),
+                    params.get("cpi", ""),
+                    enc=params.get("enc", ""),
+                    openc=params.get("openc"),
+                    hidetype=params.get("hidetype"),
+                ),
+            )
+            browser.close()
+            return {"chapters": chapters or [], "points": points,
+                    "no_video_cids": no_video_cids}
+    except Exception as e:
+        print(f"[tdvp] fetch_course_detail_and_verify error: {e}", file=sys.stderr)
+        return None
+
+
+def resolve_click_probe_chapter_id(course_url: str, ch_idx: int, cell_idx: int) -> Optional[str]:
+    """点击探测：点击目录树中指定位置的节点，从 URL 提取 chapterId。
+
+    仅在 fetch_course_discovery 拿不到节点的 chapterId 时使用。
+    点击不会自动播放视频（只触发页面内章节切换）。
+    """
+    import os
+    user = os.environ.get("CX_USER")
+    pw = os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        params = _parse_url_params(course_url)
+        chapter_id = params.get("chapter_id") or ""
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from app import e2_headed_gha as E
+        cp = _tdvp_course_params(params)
+
+        from playwright.sync_api import sync_playwright
+        display = os.environ.get("DISPLAY", ":99")
+
+        with sync_playwright() as pwc:
+            from utils.browser_factory import launch_kwargs  # 可配 XUE_BROWSER_CHANNEL/EXE
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+            base = E.build_base_url(chapter_id, cp)
+            page.goto(base, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000)
+            try:
+                page.wait_for_selector("#phone", timeout=12000)
+                page.locator("#phone").first.fill(user)
+                page.locator("#pwd").first.fill(pw)
+                for sel in ["button:has-text('登录')", "a.loginbtn", ".loginbtn"]:
+                    try:
+                        if page.locator(sel).count() > 0:
+                            page.locator(sel).first.click(force=True, timeout=3000)
+                            break
+                    except Exception:
+                        pass
+                for _ in range(15):
+                    page.wait_for_timeout(1000)
+                    if "passport2.chaoxing.com/login" not in page.url:
+                        break
+            except Exception:
+                pass
+            page.goto(course_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+
+            # 点击指定位置的目录节点
+            clicked = page.evaluate("""
+                (ci, si) => {
+                    const tree = document.querySelector('#coursetree');
+                    if (!tree) return false;
+                    const cells = tree.querySelectorAll('.posCatalog_select:not(.firstLayer)');
+                    const list = Array.from(cells);
+                    const target = list[si];
+                    if (!target) return false;
+                    const name = target.querySelector('.posCatalog_name');
+                    if (!name) return false;
+                    name.click();
+                    return true;
+                }
+            """, cell_idx)
+            if not clicked:
+                print(f"[tdvp] click-probe: click failed at ci={ch_idx}, si={cell_idx}", file=sys.stderr)
+                browser.close()
+                return None
+            page.wait_for_timeout(4000)
+            new_url = page.url
+            m = re.search(r'chapterId[=:](\d+)', new_url)
+            cid = m.group(1) if m else ""
+            browser.close()
+            print(f"[tdvp] click-probe: ci={ch_idx} si={cell_idx} → chapterId={cid or 'NOT_FOUND'}", flush=True)
+            return cid or None
+    except Exception as e:
+        print(f"[tdvp] resolve_click_probe error: {e}", file=sys.stderr)
+        return None
+
+
+def fetch_page_html(course_url: str, cx_user: Optional[str] = None,
+                    cx_pass: Optional[str] = None) -> Optional[str]:
+    """轻量级页面抓取（兼容旧接口）：返回页面 HTML 字符串。
+
+    新代码应优先用 fetch_course_discovery() 直接从 DOM 提取。
+    """
+    import os
+    user = cx_user or os.environ.get("CX_USER")
+    pw = cx_pass or os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        params = _parse_url_params(course_url)
+        chapter_id = params.get("chapter_id") or ""
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from app import e2_headed_gha as E
+        cp = _tdvp_course_params(params)
+
+        from playwright.sync_api import sync_playwright
+        display = os.environ.get("DISPLAY", ":99")
+
+        with sync_playwright() as pwc:
+            from utils.browser_factory import launch_kwargs  # 可配 XUE_BROWSER_CHANNEL/EXE
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+            base = E.build_base_url(chapter_id, cp)
+            page.goto(base, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(3000)
+            try:
+                page.wait_for_selector("#phone", timeout=12000)
+                page.locator("#phone").first.fill(user)
+                page.locator("#pwd").first.fill(pw)
+                for sel in ["button:has-text('登录')", "a.loginbtn", ".loginbtn"]:
+                    try:
+                        if page.locator(sel).count() > 0:
+                            page.locator(sel).first.click(force=True, timeout=3000)
+                            break
+                    except Exception:
+                        pass
+                for _ in range(15):
+                    page.wait_for_timeout(1000)
+                    if "passport2.chaoxing.com/login" not in page.url:
+                        break
+            except Exception:
+                pass
+            page.goto(course_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+            html = page.content()
+            browser.close()
+            return html
+    except Exception as e:
+        print(f"[tdvp] fetch_page_html error: {e}", file=sys.stderr)
+        return None
+
+
+def build_tasks_from_discovery(chapters_raw: list[dict],
+                               fallback_chapter: str = "",
+                               video_counts: Optional[dict] = None) -> list[TaskInfo]:
+    """将 DOM 提取的章节列表转换为「Chapter 内多个 Task」的 TaskInfo 列表（E6.2）。
+
+    之前只生成 1 个 chapter TaskInfo 的原因（E6.2 §1）：
+      旧实现把「每个目录节点（.posCatalog_select）」当作一个 task 直接映射，
+      task_type 恒为 video，没有把 chapter 内部可能存在的多个 job/task 拆开。
+
+    现在：只有确定有视频（video_counts[cid] > 0）才产 video Task（1 个/视频点）。
+      已知「0 个视频」或**未知**（无快照证据，如「线上学习任务」任务集合）一律不臆测视频
+      —— 修复 issue#1（未知被默认成 1 个 video，非视频章被投递后空等 metadata 而失败）。
+      未完成的非「已确认视频」章产 1 个 other(unsupported)/PENDING Task：用于告知
+      reconcile——不当作 video 投进 Queue，也不让 slot 彻底消失。
+
+    chapter_raw = {chapter_id, title, status, text, cell_index, chapter_index, job_remaining}
+    """
+    video_counts = video_counts or {}
+    tasks = []
+    for ch in chapters_raw:
+        title = ch.get("title", "").strip()
+        if not title:
+            continue
+        cid = str(ch.get("chapter_id", ""))
+        status_raw = ch.get("status", "unknown")
+        if status_raw == "completed":
+            status, conf = "COMPLETED", "UI"
+        elif status_raw == "pending":
+            status, conf = "PENDING", "UI"
+        else:
+            status, conf = "UNKNOWN", "UI"
+        job_remaining = int(ch.get("job_remaining", 0) or 0)
+        detail = ch.get("text", "")[:80]
+        ch_idx = ch.get("chapter_index", 0)
+        cell_idx = ch.get("cell_index", 0)
+        task_id = cid if cid else f"_gi{ch_idx}"
+
+        # 1) video task —— 只有 确定有视频（video_counts[c] > 0，来自 chapter_points 快照的
+        #    实时复核）才产，1 个视频点 1 个。已知「0 个视频」或**未知**（不在快照，如未复核的
+        #    「线上学习任务」任务集合）一律不产 video —— 这是 issue#1 根因：旧实现把未知默认成
+        #    1 个 video 点，非视频章 1217304710 被 mint 成假 video，scheduler 投递后在 headed
+        #    模式空等 metadata 造成 FAIL(video metadata not ready)。缺省不变量：
+        #    无视频证据 ≈ 非 video——>未完成章走下方 other(unsupported) 兜底，不进视频队列。
+        n_videos = int(video_counts.get(cid, 0) or 0)
+        known_video = n_videos > 0
+        if known_video:
+            for vi in range(n_videos):
+                vtid = task_id if vi == 0 else f"{task_id}:video{vi + 1}"
+                v_detail = detail if vi == 0 else f"{vtid} 视频点 {vi + 1}/{n_videos}"
+                tasks.append(TaskInfo(
+                    task_id=vtid,
+                    chapter_id=cid if cid else "",
+                    title=title,
+                    task_type="video",
+                    status=status,
+                    confidence=conf,
+                    source_detail=v_detail,
+                    evidence=TaskEvidence(status, conf, v_detail),
+                    _ch_idx=ch_idx,
+                    _cell_idx=cell_idx,
+                ))
+
+        # 2) 非 video（other/unsupported）task —— 未完成章里除已计为 video 的点之外的点；
+        #    或根本无已确认视频点的章（未知/0）若未完成，也给 1 个 other 兜底：
+        #    - 有 N 个 video + 剩余任务点 → 余数 other；
+        #    - 无 video 或计数未知 → 整章以 other(unsupported) 记录，不当作 video 投递，
+        #      既不空等 metadata（issue#1），也不让章节在账上凭空消失（reconcile 仍可见）。
+        not_all_done = (status_raw != "completed") or (job_remaining > 0)
+        non_video_remain = job_remaining - n_videos
+        emit_other = (non_video_remain > 0) or (not known_video)
+        if cid and not_all_done and emit_other:
+            tasks.append(TaskInfo(
+                task_id=f"{cid}:other",
+                chapter_id=cid,
+                title=title,
+                task_type="other",          # 非 video → unsupported/pending
+                status="PENDING",           # §6: 非 video 先记 pending/unsupported
+                confidence="UI",
+                source_detail=(f"余 {non_video_remain} 个非视频点"
+                               if known_video
+                               else "无已确认视频点（uncertain，不按 video 投递）"),
+                evidence=TaskEvidence("PENDING", "UI",
+                                      (f"uncategorised; {non_video_remain} 待完成"
+                                       if known_video
+                                       else "uncertain: no confirmed video point")),
+                _ch_idx=ch_idx,
+                _cell_idx=cell_idx,
+            ))
+    return tasks
+
+
+# ── Live per-chapter calibration (E6.2) ───────────────────────────
+
+# 该章内每个任务点由 .ans-job-icon 承载，完成与否看其 parent 是否带
+# .ans-job-finished；类型看 icon 的附加类（.ans-job-video 已确认，quiz 等按约定）。
+
+
+def _classify_job(marker_class: str) -> str:
+    """从 .ans-job-icon 的 class 推断任务点类型。video 已确认，其余按约定。"""
+    for t in ("video", "quiz", "exam", "document", "discussion", "homework"):
+        if f"ans-job-{t}" in (marker_class or ""):
+            return t
+    return "other"
+
+
+def job_rows_to_points(rows: list[dict], knowledge_id: str) -> list[dict]:
+    """cards 帧原始行 → 点级任务（纯函数，可测）。D12 修复点。
+
+    去重按**点身份**而非文本：视频点带 `.ans-insertvideo-online[objectid]`
+    （稳定身份），同 oid 的重复访问（item 与内嵌 icon 各命中一次）折叠；
+    两个 marker/文本全同、只有 oid 不同的点**不再被吞**（旧键
+    `marker|text[:20]` 在空文本多视频章上碰撞，708 实测 total 2→1）。
+    无 oid 的行退回旧的文本键去重，行为不变。
+    """
+    points: list[dict] = []
+    seen_oids: set[str] = set()
+    seen_text_keys: set[str] = set()
+    video_seen = 0
+    for r in rows:
+        typ = r.get("type") or _classify_job(r.get("marker") or "")
+        oid = r.get("objectid")
+        marker_tokens = [t for t in (r.get("marker") or "").split()
+                         if t and t != "ans-job-icon"]
+        if (not oid and not marker_tokens
+                and not (r.get("titleText") or "").strip()):
+            # D13：cards 帧里有个**裸** `.ans-job-icon`（无 oid、marker 里没有任何
+            # 类型标记、无文本），内容启发式仍会把它判成 video，于是 mint 出一个
+            # 没有身份的幻影任务（真站 1217304738 的 `:video3`：停在 DISCOVERED、
+            # 永不可能完成，还把视频点计数抬高一格）。
+            # 只掐"三重无身份"的行 —— 带 ans-job-video 标记或带文本的行照旧走
+            # 文本去重（D12 行为不变），作业/文档等本就无 oid 的点也不被误杀。
+            continue
+        if oid:
+            if oid in seen_oids:
+                continue
+            seen_oids.add(oid)
+        else:
+            key = (r.get("marker") or "") + "|" + (r.get("titleText") or "")[:20]
+            if key in seen_text_keys:
+                continue
+            seen_text_keys.add(key)
+        r = dict(r)
+        if typ == "video":
+            # 第 1 个视频沿用章节 id（与 registry 的 video task_id 一致）；
+            # 第 2+ 个用 <chapterId>:video<idx>（与 build_tasks 的多视频拆分一致）。
+            video_seen += 1
+            r["task_id"] = (knowledge_id if video_seen == 1
+                            else f"{knowledge_id}:video{video_seen}")
+        else:
+            r["task_id"] = f"{knowledge_id}:{typ}"
+        r["type"] = typ
+        points.append(r)
+    return points
+
+
+# ── 新版课程的「标签页」扫描（个人自用改造）──────────────────────────
+# 背景：新版课程的一个 chapterId 下，cards 接口有多个 num 页 ——
+#   0=任务导读 / 1=图谱导航 / 2,3=教学资源 / 4=测验习题 / 5=巩固提升，
+# 任务点分散在各页里，而**页面默认只加载 num=0**（常为纯文字导读，无任务点）。
+# 点级读取若只看默认页，就会把「视频藏在 num=2/3」的章节误判成「无视频工作」。
+# 实测见 tools/diag_card_nums.py（章节 1222249934 与 1222249868 两章互证）。
+CARD_NUM_SCAN_MAX = 8        # 实测课程有效页为 0..5，留余量
+CARD_NUM_EMPTY_STOP = 2      # 连续 N 页无视频即停止，避免无谓等待
+
+# 只认视频点：本改造的目标就是视频（PDF/测验等项目引擎本就不处理，
+# 收进来也只会变成 other 类型占位）。返回结构与 job_rows_to_points 兼容。
+_CARD_NUM_VIDEO_JS = """() => {
+    const out = [];
+    document.querySelectorAll('.ans-insertvideo-online[objectid]').forEach(n => {
+        const oid = n.getAttribute('objectid') || '';
+        if (!oid) return;
+        const item = n.closest('.ans-job-item, .ans-item') || n.parentElement;
+        const finished = item ? item.classList.contains('ans-job-finished') : false;
+        out.push({marker: 'ans-job-icon ans-job-video', type: 'video',
+                  isFinished: finished, objectid: oid,
+                  titleText: (item && item.innerText || '').trim()
+                             .replace(/\\s+/g, ' ').slice(0, 60)});
+    });
+    return out;
+}"""
+
+
+def scan_following_card_nums(page, knowledge_id: str,
+                             start: int = 1,
+                             max_num: int = CARD_NUM_SCAN_MAX
+                             ) -> "tuple[list[dict], list[int]]":
+    """遍历 cards 的后续 num 页，收集其中的**视频**任务点。
+
+    返回 (points, scanned_nums)。每个 point 带 `card_num` 字段 —— 播放时据此切页。
+    连续 CARD_NUM_EMPTY_STOP 页无视频即停止（实测 6+ 页是空壳）。
+
+    仅在「默认页读空」时调用（见 read_chapter_job_points_diag），
+    因此对上游单页结构的课程零影响。
+    """
+    from utils.page_ops import switch_card_num
+
+    collected: list[dict] = []
+    scanned: list[int] = []
+    empty_streak = 0
+    video_seen = 0                       # 跨页累计（章内全局序号）
+    for num in range(start, max_num + 1):
+        # A4：逐页进度可见 —— 探测的翻页是有界循环（≤8 页、连续 2 空页早停），
+        # 但从窗口外看就是"浏览器在反复翻页"，和死循环难以区分。每页一行进度，
+        # 把"在干什么、还剩多少"显式打出来。
+        print(f"[tdvp] probe-scan {knowledge_id}: 翻到第 {num}/{max_num} 页…",
+              file=sys.stderr, flush=True)
+        if not switch_card_num(page, num):
+            break
+        page.wait_for_timeout(4000)          # 等新 cards 帧渲染出任务点
+        got: list[dict] = []
+        for fr in page.frames:
+            if "knowledge/cards" not in (fr.url or ""):
+                continue
+            try:
+                rows = fr.evaluate(_CARD_NUM_VIDEO_JS)
+            except Exception:
+                rows = []
+            if rows:
+                got.extend(job_rows_to_points(rows, knowledge_id))
+            break
+        scanned.append(num)
+        if got:
+            page_idx = 0
+            for p in got:
+                p["card_num"] = num
+                if p.get("type") == "video":
+                    page_idx += 1
+                    video_seen += 1
+                    # 按「章内全局序号」重新编号：job_rows_to_points 每次调用都从 1
+                    # 起编，直接沿用会让**不同页的第 1/2 个视频撞名**（一个页面有多个
+                    # 视频、且视频跨页分布时，撞名会让后者覆盖前者 → 漏刷）。
+                    p["task_id"] = (knowledge_id if video_seen == 1
+                                    else f"{knowledge_id}:video{video_seen}")
+                    p["page_video_index"] = page_idx     # 页内序号（播放时定位用）
+            collected.extend(got)
+            empty_streak = 0
+        else:
+            empty_streak += 1
+            if empty_streak >= CARD_NUM_EMPTY_STOP:
+                break
+    return collected, scanned
+
+
+def read_chapter_job_points(
+    page,
+    knowledge_id: str,
+    course_id: str,
+    clazz_id: str,
+    cpi: str,
+    enc: str = "",
+    openc: Optional[str] = None,
+    hidetype: Optional[str] = None,
+) -> list[dict]:
+    """L2 live verification：打开指定章节的 cards 帧，读其真实任务点列表。
+
+    兼容包装：只需要点级时用这个；需要区分「帧没挂载」还是「帧在而无任务点」
+    时用 `read_chapter_job_points_diag`（返回值多一个 cards_frames）。
+    """
+    pts, _cards = read_chapter_job_points_diag(
+        page, knowledge_id, course_id, clazz_id, cpi,
+        enc=enc, openc=openc, hidetype=hidetype)
+    return pts
+
+
+def read_chapter_job_points_diag(
+    page,
+    knowledge_id: str,
+    course_id: str,
+    clazz_id: str,
+    cpi: str,
+    enc: str = "",
+    openc: Optional[str] = None,
+    hidetype: Optional[str] = None,
+) -> "tuple[list[dict], int]":
+    """同 read_chapter_job_points，额外返回 (points, cards_frames)。
+
+    cards_frames 是挂载的 knowledge/cards 帧数 —— 「读空」的归因依据：
+    0 = 帧没挂载（读取失败，不能下任何结论）；>=1 且 pts=0 = 帧在而没有
+    可识别任务点行（纯文档/无任务点章，可判定「无视频工作」）。
+    """
+    url = (f"https://mooc1.chaoxing.com/mycourse/studentstudy"
+           f"?chapterId={knowledge_id}&courseId={course_id}"
+           f"&clazzid={clazz_id}&cpi={cpi}&mooc2=1")
+    if enc:
+        url += f"&enc={enc}"
+    if hidetype:
+        url += f"&hidetype={hidetype}"
+    if openc:
+        url += f"&openc={openc}"
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_timeout(7000)
+
+    points: list[dict] = []
+    n_cards = 0
+    for fr in page.frames:
+        if "knowledge/cards" not in fr.url:
+            continue
+        n_cards += 1
+        try:
+            fr.wait_for_selector(".ans-job-item, .ans-job-icon", timeout=8000)
+        except Exception:
+            continue
+        page.wait_for_timeout(1200)
+        rows = fr.evaluate("""() => {
+            const out = [];
+            document.querySelectorAll('.ans-job-item, .ans-item, .ans-job-icon').forEach(n => {
+                const icon = n.classList.contains('ans-job-icon')
+                    ? n : n.querySelector('.ans-job-icon');
+                if (!icon) return;
+                // 完成标志在任务点最近的 .ans-job-item / .ans-item 上（confirmed）
+                const item = icon.closest('.ans-job-item, .ans-item') || icon.parentElement;
+                const finished = item ? item.classList.contains('ans-job-finished') : false;
+                const marker = (icon.className||'').toString();
+                let type = 'other';
+                if (/\\bans-job-video\\b/i.test(marker)) type = 'video';
+                else if (/ans-job-work|ans-homework/i.test(marker)) type = 'homework';
+                else if (/ans-job-test|ans-job-19/i.test(marker)) type = 'quiz';
+                else if (/ans-job-exam/i.test(marker)) type = 'exam';
+                else if (/ans-job-discuss/i.test(marker)) type = 'discuss';
+                else if (/ans-job-pdf|ans-job-read|ans-job-doc/i.test(marker)) type = 'document';
+                else {
+                    // 内容级启发式（confirmed 视频：video/ananas iframe；文本 fallback）
+                    const hasVideo = item.querySelector('video, [class*=video_html5], iframe[src*=ananas], .videoContainer, .ans-insertvideo');
+                    const txt = (item.innerText || '');
+                    if (hasVideo || /观看.*视频|播放|总时长的?\\s*\\d+%|视频点/i.test(txt)) type = 'video';
+                    else if (/达标测试|测验|测试|作业|考试/i.test(txt)) type = 'quiz';
+                }
+                // 视频点的稳定身份（D12）：同 oid = 同一点被 item/icon 双访问；
+                // 不同 oid = 不同点，绝不再按文本折叠。去重在 Python 侧
+                // job_rows_to_points 完成。
+                const vid = item.querySelector('.ans-insertvideo-online[objectid]');
+                out.push({ marker, type, isFinished: finished,
+                           titleText: (item.innerText||'').trim().replace(/\\s+/g,' ').slice(0,60),
+                           objectid: vid ? (vid.getAttribute('objectid') || '') : '' });
+            });
+            return out;
+        }""")
+        points.extend(job_rows_to_points(rows, knowledge_id))
+        break
+
+    # ── 新版课程的标签页结构（个人自用改造）───────────────────────────
+    # 默认页（num=0，通常是「任务导读」）读空时，遍历后续 num 页补收视频点。
+    # **只在读空时触发** —— 上游单页结构的课程（默认页直接列出全部任务点）
+    # 行为零变化。
+    if not points:
+        extra, scanned = scan_following_card_nums(page, knowledge_id)
+        if extra:
+            points.extend(extra)
+            _pages = sorted({int(p.get("card_num", 0)) for p in extra})
+            print(f"[tdvp] 标签页扫描补收 {len(extra)} 个视频点，"
+                  f"来自 num={_pages}（已扫描 {scanned}）",
+                  file=sys.stderr, flush=True)
+
+    # 读空必须可归因（run 36993138621：719 深读静默返回空 → 全课程 NOOP，
+    # 日志却无任何痕迹）。cards_frames=0 → 帧没挂载；=1 且 pts=0 → 帧在但没有
+    # 可识别的任务点行（如纯 PPT 章的裸 icon 被 D13 过滤 —— 719 实测）。
+    tv, tf = chapter_video_summary(points)
+    print(f"[tdvp] point-read {knowledge_id}: pts={len(points)} "
+          f"video={tf}/{tv} cards_frames={n_cards}", file=sys.stderr, flush=True)
+    return points, n_cards
+
+
+def build_live_pending(job_points: list[dict]) -> set[str]:
+    """从一章的实时 job 点列表推导「当前确实未完成」的 task_id 集合。
+
+    Registry 里一个章节的 video task 会用章节 id 作 task_id（不加后缀）。
+    若该章存在未 finished 的 video 点 → 该 video task 应降级。
+    """
+    return {p["task_id"] for p in job_points if not p.get("isFinished")}
+
+
+def build_live_finished(job_points: list[dict]) -> set[str]:
+    """从一章的实时 job 点列表推导「服务端已判 finished」的 task_id 集合。
+
+    与 build_live_pending 互补：BLOCKED 任务的合法恢复事件就是这里 ——
+    用户手动看完某点后服务端会把它判 finished，registry 据此以
+    SERVER_VERIFIED 证据恢复（replay 反而产生不了事件：点已完成不会播）。
+    """
+    return {p["task_id"] for p in job_points
+            if p.get("isFinished") and p.get("task_id")}
+
+
+def chapter_video_summary(job_points: list[dict]) -> tuple[int, int]:
+    """返回一章的实时 job 点里 (视频点总数, 已完成视频点数)。
+
+    用于 Discovery 拆分多视频章：当一章有 N>1 个视频且未全部完成时，
+    build_tasks_from_discovery 用 N 生成 N 个视频 task，逐个进入队列。
+    返回 (total, finished)；无视频点时 total=0。
+    """
+    videos = [p for p in job_points if p.get("type") == "video"]
+    total = len(videos)
+    finished = sum(1 for p in videos if p.get("isFinished"))
+    return total, finished
+
+
+def live_verify_chapter(
+    knowledge_id: str,
+    course_id: str,
+    clazz_id: str,
+    cpi: str,
+    cx_user: str,
+    cx_pass: str,
+    enc: str = "",
+) -> Optional[dict]:
+    """独立章节 live 复核：打开浏览器 → read_chapter_job_points。
+
+    `enc` 必须来自当前登录账号自己的课程 URL（同 read_chapter_job_points 的
+    fork 回归说明）。
+
+    Returns dict 含 {points, video_total, video_finished, live_pending,
+    live_finished}；失败返回 None。供 scheduler 在选任务前对目标章做 L2 实校
+    （成本有界）。
+    """
+    from playwright.sync_api import sync_playwright
+    import os
+    user = cx_user or os.environ.get("CX_USER")
+    pw = cx_pass or os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+    try:
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from utils.cookie_store import ensure_login
+        with sync_playwright() as p:
+            from utils.browser_factory import launch_kwargs  # 可配 XUE_BROWSER_CHANNEL/EXE
+            b = p.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=["--no-sandbox", "--disable-gpu"],
+            )
+            pg = b.new_page()
+            ensure_login(pg, pg.context, "https://mooc1.chaoxing.com", user, pw)
+            cid_old = knowledge_id
+            pts = read_chapter_job_points(pg, cid_old, course_id, clazz_id, cpi,
+                                          enc=enc)
+            b.close()
+    except Exception as e:
+        print(f"[tdvp] live_verify_chapter error: {e}", file=sys.stderr)
+        return None
+    total, finished = chapter_video_summary(pts)
+    return {
+        "points": pts,
+        "video_total": total,
+        "video_finished": finished,
+        "live_pending": build_live_pending(pts),
+        "live_finished": build_live_finished(pts),
+    }
+
+
+def aggregate_evidence(
+    passive_results: dict[str, TaskInfo],
+    active_results: Optional[dict[str, TaskInfo]] = None,
+) -> dict[str, TaskInfo]:
+    """合并被动探测和主动验证结果，SERVER_VERIFIED 优先级高于 UI。"""
+    merged = {}
+    for task_id, task in passive_results.items():
+        merged[task_id] = task
+
+    if active_results:
+        for task_id, active_task in active_results.items():
+            if task_id not in merged:
+                merged[task_id] = active_task
+                continue
+            existing = merged[task_id]
+            if active_task.confidence == "SERVER_VERIFIED":
+                merged[task_id] = active_task
+            elif active_task.status == "COMPLETED" and existing.status == "PENDING":
+                merged[task_id] = TaskInfo(
+                    task_id=task_id,
+                    chapter_id=active_task.chapter_id,
+                    title=active_task.title,
+                    task_type=active_task.task_type,
+                    status="COMPLETED",
+                    confidence="SERVER_VERIFIED",
+                    source_detail=f"active_probe_verified({existing.source_detail})",
+                    evidence=TaskEvidence("COMPLETED", "SERVER_VERIFIED",
+                                          f"active_probe_verified({existing.source_detail})"),
+                )
+    return merged
+
+
+# ── Task Registry ──────────────────────────────────────────────────
+
+# repo_root(): 源码形态 = 仓库根（与旧表达式等价）；冻结形态 = exe 旁（utils/paths.py）
+from utils.paths import repo_root  # noqa: E402
+
+TASKS_FILE = repo_root() / "state" / "tdvp_tasks.json"
+
+
+def load_task_registry(course_key: str) -> dict[str, TaskInfo]:
+    if not TASKS_FILE.exists():
+        return {}
+    try:
+        data = json.loads(TASKS_FILE.read_text(encoding="utf-8"))
+        return {k: TaskInfo.from_dict(v) for k, v in data.get(course_key, {}).items()}
+    except Exception:
+        return {}
+
+
+def save_task_registry(course_key: str, tasks: dict[str, TaskInfo]) -> None:
+    try:
+        data = json.loads(TASKS_FILE.read_text(encoding="utf-8")) if TASKS_FILE.exists() else {}
+    except Exception:
+        data = {}
+    data[course_key] = {k: v.to_dict() for k, v in tasks.items()}
+    tmp = TASKS_FILE.with_suffix(TASKS_FILE.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(TASKS_FILE)
+
+
+def get_pending_tasks(course_key: str, registry: Optional[dict[str, TaskInfo]] = None) -> list[TaskInfo]:
+    if registry is None:
+        registry = load_task_registry(course_key)
+    return sorted(
+        [t for t in registry.values() if t.status in ("PENDING", "UNKNOWN")],
+        key=lambda t: t.task_id,
+    )
+
+
+def get_completed_tasks(course_key: str, registry: Optional[dict[str, TaskInfo]] = None) -> list[TaskInfo]:
+    if registry is None:
+        registry = load_task_registry(course_key)
+    return [t for t in registry.values() if t.status == "COMPLETED"]
+
+
+# ── Progress Synchronization ──────────────────────────────────────
+
+def sync_progress_to_course_state(course_key: str, discovered: CourseDiscovery) -> dict:
+    """将发现结果同步到 course_state.json 的 task_queue。"""
+    from state.course_state import load_course_state, save_course_state, CourseProgress
+
+    state = load_course_state(course_key)
+    if not state:
+        return {"error": f"No course state for {course_key}"}
+
+    all_tasks = discovered.all_tasks
+    completed = discovered.completed_tasks
+    pending = discovered.pending_tasks
+    unknown = discovered.unknown_tasks
+
+    state.progress = CourseProgress(
+        completed=len(completed),
+        total=len(all_tasks),
+        last_completed_task=completed[-1].task_id if completed else None,
+        active_task=pending[0].task_id if pending else None,
+    )
+
+    task_queue = [t.task_id for t in sorted(pending + unknown, key=lambda t: t.task_id)]
+
+    if not hasattr(state, 'discoveries'):
+        state.discoveries = []
+    state.discoveries.append({
+        "discovered_at_utc": discovered.discovered_at_utc,
+        "total_tasks": len(all_tasks),
+        "completed": len(completed),
+        "pending": len(pending),
+        "unknown": len(unknown),
+    })
+
+    save_course_state(state)
+    return {
+        "course_key": course_key,
+        "total": len(all_tasks),
+        "completed": len(completed),
+        "pending": len(pending),
+        "unknown": len(unknown),
+        "task_queue": task_queue,
+        "next_task": task_queue[0] if task_queue else None,
+    }
+
+
+# ── Discovery ──────────────────────────────────────────────────────
+
+def discover_course(course_url: str, html: str, chapter_id: Optional[str] = None) -> CourseDiscovery:
+    """从 HTML 中解析课程所有章节的任务状态。"""
+    from resolvers.course_resolver import _parse_url_params
+
+    params = _parse_url_params(course_url)
+    course_id = params.get("course_id", "")
+    clazz_id = params.get("clazz_id", "")
+    course_key = f"{course_id}_{clazz_id}"
+
+    target_chapter = chapter_id or params.get("chapter_id")
+    chapters = {}
+
+    if target_chapter:
+        tasks = parse_task_status_from_page(html, target_chapter)
+        chapters[target_chapter] = ChapterInfo(
+            chapter_id=target_chapter,
+            title=f"Chapter {target_chapter}",
+            tasks=tasks,
+        )
+    else:
+        chapter_ids = set()
+        if params.get("chapter_id"):
+            chapter_ids.add(params["chapter_id"])
+        for m in re.finditer(r'chapterId[=:](\d+)', html):
+            chapter_ids.add(m.group(1))
+
+        for cid in sorted(chapter_ids):
+            tasks = parse_task_status_from_page(html, cid)
+            chapters[cid] = ChapterInfo(chapter_id=cid, title=f"Chapter {cid}", tasks=tasks)
+
+    return CourseDiscovery(
+        course_id=course_id,
+        clazz_id=clazz_id,
+        course_key=course_key,
+        chapters=list(chapters.values()),
+    )
+
+
+def run_passive_probe(course_url: str, html: str, chapter_id: Optional[str] = None) -> CourseDiscovery:
+    """执行 Passive Probe（纯 HTML 解析，不启动浏览器）。"""
+    return discover_course(course_url, html, chapter_id=chapter_id)

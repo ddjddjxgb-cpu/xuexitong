@@ -1,0 +1,12 @@
+{
+  "_comment": "个人自用课程列表。结构为数组以预留多课程；当前只跑第一个 enabled 且 course_url 非空的条目。",
+  "_how_to": "把学习通『章节学习页』的完整 URL 填到下面第一个条目的 course_url。必须是能看到视频目录的那个页面，从浏览器地址栏整段复制（需含 chapterId / courseId / clazzid / cpi / enc / hidetype / openc）。注意 clazzid 必须小写。",
+  "_note": "上游那份 config/course.json 是死配置（没有代码读它），本文件才是实际生效的。也可以不填这里，改成启动时手动粘贴 URL。",
+  "courses": [
+    {
+      "name": "我的课程",
+      "course_url": "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=1222249861&courseId=266158447&clazzid=153857464&cpi=577777996&enc=f892a1d4362d66ad427cc214f4decfbb&mooc2=1&hidetype=0&fanyaVersion=0&openc=3fb04b0b7ea8f0c5b192d937fad12c0e",
+      "enabled": true
+    }
+  ]
+}

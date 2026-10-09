@@ -1,0 +1,97 @@
+"""E6: TDVP Click Probe — 通过 DOM 点击获取无 chapterId 的节点链接。
+
+借鉴 xuexitongScript/v3_optimized.user.js 的 #coursetree DOM 结构：
+  #coursetree > ul > li (章节) → .posCatalog_select (小节) → .posCatalog_name (标题)
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import sys
+from pathlib import Path
+from typing import Optional
+
+
+def click_probe_chapter_id(course_url: str, chapter_index: int, cell_index: int) -> Optional[str]:
+    """点击目录树中指定位置的节点，从 URL 提取 chapterId。
+
+    Args:
+        course_url: studentstudy URL
+        chapter_index: DOM #coursetree > ul > li 的索引
+        cell_index: 该 li 内 .posCatalog_select:not(.firstLayer) 的索引
+
+    Returns:
+        chapterId 字符串，或 None（点击失败/无 chapterId）
+    """
+    user = os.environ.get("CX_USER")
+    pw = os.environ.get("CX_PASS")
+    if not user or not pw:
+        return None
+
+    try:
+        from models import CourseParams
+
+        sys.path.insert(0, str(Path(__file__).parent.parent / "e2"))
+        from app import e2_headed_gha as E
+
+        from playwright.sync_api import sync_playwright
+        display = os.environ.get("DISPLAY", ":99")
+
+        with sync_playwright() as pwc:
+            # 走可配层：XUE_BROWSER_CHANNEL / XUE_BROWSER_EXE 在此同样生效。
+            # 本函数在 scheduler 主流程中被调用（scheduler.py:1964），上游此处硬编码
+            # channel="chromium"，会让「用系统浏览器」的配置在此静默失效。
+            from utils.browser_factory import launch_kwargs, display_args
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+
+            # ── 登录（cookie 优先，无则密码登录）─────────────────
+            from utils.cookie_store import ensure_login
+            cp = CourseParams.from_url(course_url)
+            base = E.build_base_url(cp.chapter_id, cp)
+            ensure_login(page, ctx, base, user, pw)
+
+            # ── 导航到课程页面 ────────────────────────────────────
+            page.goto(course_url, wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+
+            # ── 点击目标节点 ──────────────────────────────────────
+            clicked = page.evaluate("""
+                (si) => {
+                    const tree = document.querySelector('#coursetree');
+                    if (!tree) return false;
+                    const cells = tree.querySelectorAll('.posCatalog_select:not(.firstLayer)');
+                    const list = Array.from(cells);
+                    const target = list[si];
+                    if (!target) return false;
+                    const name = target.querySelector('.posCatalog_name');
+                    if (!name) return false;
+                    name.click();
+                    return true;
+                }
+            """, cell_index)
+
+            if not clicked:
+                print(f"[e6] click-probe: click failed ci={chapter_index} si={cell_index}",
+                      file=sys.stderr)
+                browser.close()
+                return None
+
+            page.wait_for_timeout(4000)
+            new_url = page.url
+            m = re.search(r'chapterId[=:](\d+)', new_url)
+            cid = m.group(1) if m else ""
+            browser.close()
+            print(f"[e6] click-probe: ci={chapter_index} si={cell_index} → chapterId={cid or 'NOT_FOUND'}",
+                  flush=True)
+            return cid or None
+
+    except Exception as e:
+        print(f"[e6] click_probe error: {e}", file=sys.stderr)
+        return None

@@ -1,0 +1,958 @@
+"""E6: Task Registry + Execution Queue
+
+核心设计：
+  Task Registry  = 真相源（由 Course Discovery 驱动更新）
+  Execution Queue = 派生计划（每次 wake 时从 Registry 重算）
+
+任务状态机：
+  DISCOVERED → PENDING → READY → RUNNING → VERIFYING → COMPLETED
+                                                    ↓
+                                               FAILED → READY（可重试）
+                                                    ↓
+                                              BLOCKED（超过重试上限）
+
+证据强度：
+  UI         = 页面 DOM 观察（弱）
+  SERVER     = 服务端 isPassed 验证（强）
+  RECHECK    = 二次发现确认（最强）
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Optional, Literal
+from enum import Enum
+
+from tvdp.tdvp import TaskStatus as TdvpStatus, TaskInfo as TdvpTaskInfo
+
+# ── 类型定义 ───────────────────────────────────────────────────────
+TaskPhase = Literal["DISCOVERED", "PENDING", "READY", "RUNNING", "VERIFYING",
+                    "COMPLETED", "FAILED", "BLOCKED", "UNKNOWN", "STALE"]
+EvidenceLevel = Literal["NONE", "UI", "SERVER_VERIFIED", "RECHECK", "CONFLICT"]
+
+# 「整章还有别的点没完」这一类降级理由：它对**本点**没有证明力（引擎做不了达标测试/PPT），
+# 所以不得据此把一个服务端已确认的点反复投回队列。判据见 TaskRecord.revoked_by_chapter_reading。
+COARSE_REVOCATION_MARKS = ("chapter has unfinished points",)
+
+
+# ── 数据模型 ───────────────────────────────────────────────────────
+
+@dataclass
+class Verification:
+    level: EvidenceLevel = "NONE"
+    verified_at_utc: Optional[str] = None
+    run_id: Optional[str] = None
+    source_detail: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Verification":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class Lease:
+    run_id: Optional[str] = None
+    started_at_utc: Optional[str] = None
+    expires_at_utc: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Lease":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CompletionEvidence:
+    """任务完成的唯一 canonical 证据——用于回答 Which/When/Why/Server evidence。
+
+    由 mark_completed 强制要求携带。绝不允许空证据的隐式完成。
+    """
+    type: EvidenceLevel = "NONE"               # SERVER_VERIFIED | UI | RECHECK | NONE
+    source: str = ""                            # isPassed | server DOM | ...
+    run_id: str = ""
+    observed_at_utc: str = ""
+    detail: str = ""
+    passed_object_ids: list = field(default_factory=list)  # isPassed=true 的对象 ID
+
+    def __post_init__(self):
+        if not self.observed_at_utc:
+            self.observed_at_utc = datetime.now(timezone.utc).isoformat()
+
+    def is_valid(self) -> bool:
+        """只有具备明确 server/runtime 证据才算有效；NONE 或空 detail 视为无效。"""
+        return self.type not in ("NONE", "") and bool(self.source)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CompletionEvidence":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class FailureRecord:
+    """一次失败的可审计记录（含 stage / run_id / detail）。"""
+    stage: str = ""                             # _derive_failure_stage() 值
+    run_id: str = ""
+    detail: str = ""
+    consecutive_failures: int = 0
+    occurred_at_utc: str = ""
+
+    def __post_init__(self):
+        if not self.occurred_at_utc:
+            self.occurred_at_utc = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "FailureRecord":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class TaskRecord:
+    """一个任务点的完整记录——真相源。
+
+    状态机：
+      DISCOVERED → PENDING → READY → RUNNING → VERIFYING → COMPLETED
+                                                      ↓
+                                                 FAILED → READY（可重试）
+                                                      ↓
+                                                BLOCKED（连续失败 ≥ max_attempts）
+
+    完成的唯一路径是 mark_completed() 且必须携带有效证据；
+    mark_failed() 由真实 runtime FAIL/ERROR/TIMEOUT 调用并立即持久化。
+    """
+    task_id: str
+    chapter_id: str
+    title: str
+    task_type: str = "video"
+    status: TaskPhase = "DISCOVERED"
+    priority: int = 0                              # 0 = 目录顺序；越高越优先
+    attempt_count: int = 0
+    attempts: int = 0                              # 兼容旧字段（= attempt_count）
+    consecutive_failures: int = 0
+    max_attempts: int = 3
+    lease: Lease = field(default_factory=Lease)
+    verification: Verification = field(default_factory=Verification)   # 兼容旧字段
+    completion_evidence: CompletionEvidence = field(default_factory=CompletionEvidence)
+    failure: FailureRecord = field(default_factory=FailureRecord)
+    created_at_utc: str = ""
+    updated_at_utc: str = ""
+    last_run_id: Optional[str] = None              # 最近一次执行 run_id
+    last_run_at_utc: Optional[str] = None
+    last_started_at: Optional[str] = None
+    last_finished_at: Optional[str] = None
+    last_success_at_utc: Optional[str] = None
+    last_failure_at_utc: Optional[str] = None
+    _ch_idx: int = field(default=0, repr=False)    # DOM 目录索引（内部用）
+    _cell_idx: int = field(default=0, repr=False)
+    rollback_count: int = 0        # 服务器回退次数（曾确认完成、又被服务器推翻）；>0 时须优先补齐
+    last_rollback_at_utc: str = "" # 最近一次被回退的时刻
+
+    def __post_init__(self):
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.created_at_utc:
+            self.created_at_utc = now
+        if not self.updated_at_utc:
+            self.updated_at_utc = now
+
+    @property
+    def key(self) -> str:
+        return self.task_id
+
+    @property
+    def is_executable(self) -> bool:
+        """任务是否可执行（READY、PENDING、STALE、刚发现的 DISCOVERED，或可重试的 FAILED）。"""
+        if self.status in ("READY", "PENDING", "STALE", "DISCOVERED"):
+            return True
+        if self.status == "FAILED" and self.consecutive_failures < self.max_attempts:
+            return True
+        return False
+
+    @property
+    def chapter_id_for_url(self) -> str:
+        """返回用于构造 URL 的 chapterId；无则返回空。"""
+        return self.chapter_id or ""
+
+    def _now(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def mark_discovered(self) -> None:
+        """由 Discovery/Reconciliation 置为待执行（无证据时不落入 COMPLETED）。"""
+        now = self._now()
+        self.status = "DISCOVERED"
+        self.updated_at_utc = now
+
+    def mark_started(self, run_id: str) -> None:
+        """进入 RUNNING（获得 lease），记录 last_started_at。"""
+        now = self._now()
+        self.status = "RUNNING"
+        self.lease = Lease(run_id=run_id, started_at_utc=now,
+                           expires_at_utc=(datetime.now(timezone.utc)
+                                           + timedelta(minutes=15)).isoformat())
+        self.last_run_id = run_id
+        self.last_run_at_utc = now
+        self.last_started_at = now
+        self.updated_at_utc = now
+
+    def mark_verifying(self) -> None:
+        self.status = "VERIFYING"
+        self.updated_at_utc = self._now()
+
+    def mark_rollback(self) -> None:
+        """记录一次服务器回退：此前被确认完成，现被服务器推翻为未完成。
+
+        用于调度：回退章应在开新课之前优先补齐（reconcile_queue 按 rollback_count > 0 排序最前）。
+        不改状态机（回退后具体落 UNKNOWN/PENDING 由调用处决定）。
+        """
+        self.rollback_count = int(self.rollback_count or 0) + 1
+        self.last_rollback_at_utc = self._now()
+        self.updated_at_utc = self._now()
+
+    def mark_completed(self, *, run_id: str,
+                       evidence_level: EvidenceLevel = "SERVER_VERIFIED",
+                       source: str = "isPassed",
+                       detail: str = "",
+                       passed_object_ids: list | None = None) -> None:
+        """—— 唯一的完成入口，强制要求有效 evidence. ——
+
+        没有传入有效证据（type=SOURCE 为空）时抛 ValueError，绝不允许隐式完成。
+        """
+        if not run_id:
+            raise ValueError("mark_completed requires a run_id")
+        if evidence_level in ("NONE", ""):
+            raise ValueError(
+                "mark_completed requires completion evidence; "
+                "URL/nextUnit/navigation inferences are NOT valid completion"
+            )
+        now = self._now()
+        self.status = "COMPLETED"
+        self.attempt_count += 1
+        self.consecutive_failures = 0            # 成功 → 重置失败计数
+        self.lease = Lease()
+        self.verification = Verification(level=evidence_level, verified_at_utc=now,
+                                         run_id=run_id, source_detail=detail or source)
+        self.completion_evidence = CompletionEvidence(
+            type=evidence_level,
+            source=source,
+            run_id=run_id,
+            observed_at_utc=now,
+            detail=detail or source,
+            passed_object_ids=list(passed_object_ids or []),
+        )
+        self.failure = FailureRecord()
+        self.last_run_id = run_id
+        self.last_run_at_utc = now
+        self.last_started_at = now
+        self.last_finished_at = now
+        self.last_success_at_utc = now
+        self.updated_at_utc = now
+
+    def mark_failed(self, *, run_id: str, detail: str = "",
+                    failure_stage: str = "") -> "bool":
+        """标记失败：consecutive_failures+1，达阈值 → BLOCKED，否则 FAILED。
+        调用方必须立即 save_registry() 持久化。
+        返回新的 status 字符串（"FAILED" / "BLOCKED"）—— 当 bool 用恒真，别看错。
+        """
+        now = self._now()
+        self.attempt_count += 1
+        self.attempts = self.attempt_count              # 兼容同步
+        self.consecutive_failures += 1
+        self.lease = Lease()
+        self.failure = FailureRecord(
+            stage=((failure_stage or "").upper()),      # 统一大写（NO_CARDS_IFRAME 等）
+            run_id=run_id or "",
+            detail=detail or "",
+            consecutive_failures=self.consecutive_failures,
+            occurred_at_utc=now,
+        )
+        blocked = self.consecutive_failures >= self.max_attempts
+        self.status = "BLOCKED" if blocked else "FAILED"
+        self.last_run_id = run_id or self.last_run_id
+        self.last_run_at_utc = now
+        self.last_started_at = self.last_started_at or now
+        self.last_finished_at = now
+        self.last_failure_at_utc = now
+        self.updated_at_utc = now
+        return self.status
+
+    def restore_for_manual_retry(self) -> "bool":
+        """人工显式恢复：BLOCKED → PENDING，清失败计数，保留失败留痕与尝试次数。
+
+        任务级熔断原本只有两条出路（服务端真源治愈 / 手改 JSON），后者绕过账本，
+        前者在"点确实没学成"时永远等不到。manual 触发就是缺口的那条合法出路——
+        与课程级 manual override 同族。返回 True 表示本次真的解了冻。
+        """
+        if self.status != "BLOCKED":
+            return False
+        now = self._now()
+        self.status = "PENDING"
+        self.consecutive_failures = 0
+        self.lease = Lease()
+        self.updated_at_utc = now
+        return True
+
+    def point_is_server_verified(self) -> bool:
+        """该**点**自身是否带服务端确认。
+
+        两种形状都算：isPassed 首捕的对象 id（经典路径），或 live 点级读数直接判
+        finished（`_heal_by_server_truth` / 铸造 heal，source 固定 "live job
+        points"，无 oid）。后者若无此放宽，`stale_completed_by_catalog` 的章级
+        粗读数会把 healed 记录打回 STALE 重投 —— 站点不为已完成点起流，白耗一次
+        投递（2026-10-02 多章深读方案定案）。
+
+        status 会随后续 run 翻脸（FAILED/UNKNOWN），这条不会 —— 多视频章里"第 1 点已过、
+        第 2 点没学到"时，靠它判断剩余工作该由兄弟点记录承载。
+        """
+        if getattr(self.verification, "level", "") != "SERVER_VERIFIED":
+            return False
+        if getattr(self.completion_evidence, "passed_object_ids", None):
+            return True
+        return getattr(self.completion_evidence, "source", "") == "live job points"
+
+    def revoked_by_chapter_reading(self) -> bool:
+        """该点的「未完成」结论是不是**章级**粗读数下的 —— 而不是这个点自己没过。
+
+        `mark_stale` 把原证据降级成 CONFLICT 但**保留** `passed_object_ids`，所以降级
+        理由就是唯一的分辨依据：只提"整章还有别的点没完"的，对本点没有证明力
+        （那些点是达标测试/PPT —— 引擎永远做不了）。真没过时由点级实时复核写下的
+        理由是另一种（`downgrade_to_pending` / "live status overrides…"），不在此列，
+        所以新鲜点级证据随时能把这个点放回队列。
+        """
+        ev = self.completion_evidence
+        if not ev or getattr(ev, "type", "") != "CONFLICT":
+            return False
+        detail = getattr(ev, "detail", "") or ""
+        return any(mark in detail for mark in COARSE_REVOCATION_MARKS)
+
+    def mark_stale(self, detail: str = "") -> None:
+        """E6.2 校准：实时状态覆盖历史完成。
+
+        当「实时服务端/DOM 显示该 task 未完成」而 registry 却记着 COMPLETED 时，
+        先把其完成证据降级为 CONFLICT 并标记 STALE（不立刻丢完成状态，
+        保留证据以便溯源），由 reconcile 决定是保留还是真正回退 PENDING。
+        """
+        now = self._now()
+        self.status = "STALE"
+        if self.completion_evidence and self.completion_evidence.type not in ("NONE", ""):
+            self.completion_evidence = CompletionEvidence(
+                type="CONFLICT",
+                source=self.completion_evidence.source,
+                run_id=self.completion_evidence.run_id,
+                observed_at_utc=now,
+                detail=(detail or "live status overrides prior completion")[:400],
+                passed_object_ids=list(self.completion_evidence.passed_object_ids or []),
+            )
+        self.updated_at_utc = now
+
+    def downgrade_to_pending(self, detail: str = "") -> None:
+        """E6.2：完成状态被实时状态推翻，回退为 PENDING（可重入队列）。
+
+        保留 completion_evidence/verification 以便审计（不删除历史），
+        但 status 回到 PENDING → is_executable 为真 → 队列重选。
+        """
+        now = self._now()
+        self.status = "PENDING"
+        self.verification = Verification(level="CONFLICT", verified_at_utc=now,
+                                         run_id="", source_detail=detail or "live re-check pending")
+        self.updated_at_utc = now
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["attempts"] = self.attempt_count
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TaskRecord":
+        ch_idx = d.pop("_ch_idx", 0)
+        cell_idx = d.pop("_cell_idx", 0)
+        lease = d.pop("lease", {}) or {}
+        verification = d.pop("verification", {}) or {}
+        cev = d.pop("completion_evidence", None) or {}
+        fail = d.pop("failure", None) or {}
+        attempts = d.get("attempts", 0)
+        attempt_count = d.get("attempt_count", attempts)
+        return cls(
+            task_id=d["task_id"],
+            chapter_id=d.get("chapter_id", ""),
+            title=d.get("title", ""),
+            task_type=d.get("task_type", "video"),
+            status=d.get("status", "DISCOVERED"),
+            priority=d.get("priority", 0),
+            attempt_count=attempt_count,
+            attempts=attempt_count,
+            consecutive_failures=d.get("consecutive_failures", 0),
+            max_attempts=d.get("max_attempts", 3),
+            lease=Lease(**lease) if isinstance(lease, dict) else Lease(),
+            verification=Verification(**verification) if isinstance(verification, dict)
+                        else Verification(),
+            completion_evidence=(CompletionEvidence.from_dict(cev)
+                                 if isinstance(cev, dict) else CompletionEvidence()),
+            failure=FailureRecord.from_dict(fail) if isinstance(fail, dict) else FailureRecord(),
+            created_at_utc=d.get("created_at_utc", ""),
+            updated_at_utc=d.get("updated_at_utc", ""),
+            last_run_id=d.get("last_run_id"),
+            last_run_at_utc=d.get("last_run_at_utc"),
+            last_started_at=d.get("last_started_at"),
+            last_finished_at=d.get("last_finished_at"),
+            last_success_at_utc=d.get("last_success_at_utc"),
+            last_failure_at_utc=d.get("last_failure_at_utc"),
+            _ch_idx=ch_idx,
+            _cell_idx=cell_idx,
+            rollback_count=int(d.get("rollback_count", 0) or 0),
+            last_rollback_at_utc=d.get("last_rollback_at_utc", ""),
+        )
+
+
+@dataclass
+class ExecutionQueue:
+    """可执行任务队列——由 Reconciler 派生。"""
+    items: list[dict] = field(default_factory=list)  # [{task_id, priority, state}]
+    reconciled_at_utc: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+# ── 文件存储 ───────────────────────────────────────────────────────
+
+# 固定锚定到仓库根 state/registry（与 state/course_state.py 的 REPO_ROOT 一致），
+# 避免相对 CWD 在任意目录运行脚本时污染仓库。
+# repo_root(): 源码形态 = 仓库根（本模块旧表达式 .parent.parent.parent 的等价收敛）；
+# 冻结形态 = exe 旁（utils/paths.py）—— 升级 exe 不丢账本。
+from utils.paths import repo_root  # noqa: E402
+
+_REPO_ROOT = repo_root()
+TASKS_DIR = _REPO_ROOT / "state" / "registry"
+
+
+def _registry_dir() -> Path:
+    """P0-2账号隔离：登录账号 CX_USER 存在 → <state_base>/accounts/<acc>/registry；
+    无账号（测试/离线诊断）→ 回退 legacy TASKS_DIR（向后兼容）。
+    state_base = TASKS_DIR 的父目录（默认 <repo>/state）；测试 override TASKS_DIR 时
+    账号 namespace 也随 tmp 走，绝不写真实仓库 state/。"""
+    from models import resolve_account_id
+    acc = resolve_account_id()
+    if not acc:
+        return Path(TASKS_DIR)
+    state_base = Path(TASKS_DIR).parent
+    return state_base / "accounts" / acc / "registry"
+
+
+def _queue_file(course_key: str) -> Path:
+    """每个课程的队列文件独立，避免多课程互相覆盖。"""
+    return _registry_dir() / course_key / "execution_queue.json"
+
+
+def _ensure_dir(course_key: str) -> Path:
+    d = _registry_dir() / course_key
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """原子写文本：先写同目录临时文件再 os.replace，避免半写文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    # newline 必须显式：tasks.json 是 CI(Linux) 写的 LF 且被 git 跟踪，Windows 的文本
+    # 模式默认会把 \n 翻成 \r\n —— 一次落盘就让整本账显示为"全文件重写"。
+    tmp.write_text(text, encoding="utf-8", newline="\n")
+    os.replace(str(tmp), str(path))
+
+
+def load_registry(course_key: str) -> dict[str, TaskRecord]:
+    f = _ensure_dir(course_key) / "tasks.json"
+    if not f.exists():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return {k: TaskRecord.from_dict(v) for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def save_registry(course_key: str, registry: dict[str, TaskRecord]) -> None:
+    d = _ensure_dir(course_key)
+    text = json.dumps({k: v.to_dict() for k, v in registry.items()},
+                      ensure_ascii=False, indent=2)
+    _atomic_write_text(d / "tasks.json", text)
+
+
+def load_legacy_registry(course_key: str) -> dict[str, TaskRecord]:
+    """P0-2 前 legacy 命名空间（`<repo>/state/registry/<course_key>/`）的只读访问。
+
+    刻意**不**走 `resolve_account_id()` / `set_account_id_hook`——hook 一旦设上，
+    `_registry_dir()` 会指向 account namespace，`load_registry` 就读不到 legacy 账。
+    继承（`bootstrap.inherit_from_legacy`）需要跨命名空间读 legacy 账，
+    用本函数直读固定 legacy 路径；不存在的账返回空 dict。
+    """
+    f = TASKS_DIR / course_key / "tasks.json"
+    if not f.exists():
+        return {}
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return {k: TaskRecord.from_dict(v) for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def load_queue(course_key: str) -> ExecutionQueue:
+    f = _queue_file(course_key)
+    if not f.exists():
+        return ExecutionQueue()
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+        return ExecutionQueue(**d)
+    except Exception:
+        return ExecutionQueue()
+
+
+def save_queue(course_key: str, q: ExecutionQueue) -> None:
+    _atomic_write_text(_queue_file(course_key), json.dumps(
+        q.to_dict(), ensure_ascii=False, indent=2))
+
+
+# ── Chapter point-level snapshot (E6.2 core story: registry = cached真源) ──
+# 一章的运行"穷尽"由「该章各任务点 finished 与否」决定，而不是一次 isPassed。
+# 这里把某次 live 复核得到的点级快照固化到 registry（缓存层），
+# 供后续 done 推导与多视频拆分复用，避免每轮重新开浏览器重扫。
+
+def _points_file(course_key: str) -> Path:
+    return _registry_dir() / course_key / "chapter_points.json"
+
+
+def load_chapter_points(course_key: str) -> dict:
+    """{cid -> {video_total, video_finished, has_video, updated_at}}"""
+    f = _points_file(course_key)
+    if not f.exists():
+        return {}
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_chapter_points(course_key: str, points: dict) -> None:
+    _atomic_write_text(_points_file(course_key), json.dumps(
+        points, ensure_ascii=False, indent=2))
+
+
+def materialize_video_counts_from_points(course_key: str,
+                                         job_points: list) -> dict[str, int]:
+    """从一次登录会话读到的实时点级数据反推 `video_counts` 并写入点级快照。
+
+    共享给 bootstrap（`_materialize_from`）和 probe（`_run_tdvp_probe`）。
+    `build_tasks_from_discovery` 只有拿到 `video_counts[cid]>0` 才产 video task；
+    否则未完成章全走 other → reconcile_queue 只收 video → queue 空 → scheduler
+    "No pending task / probe empty"（issue #4 卡点）。校正后的 `combined.points`
+    覆盖第一个未完成章，本函数把它落成点级快照 + video_counts，让 discovery
+    能产出可执行 video 任务。
+
+    Args:
+        course_key: 课程 identity key（账号命名空间由调用方上下文决定）。
+        job_points: `combined["points"]`，元素含 `task_id`（形如 <cid> 或
+            <cid>:videoN）、`type`、`isFinished`。
+    Returns:
+        `{chapter_id: video_total}`（仅含有 video 点的章）。
+    """
+    video_counts: dict[str, int] = {}
+    finished_by_cid: dict[str, int] = {}
+    for p in job_points or []:
+        if p.get("type") != "video":
+            continue
+        tid = str(p.get("task_id") or "")
+        if not tid:
+            continue
+        cid = tid.split(":")[0]
+        video_counts[cid] = video_counts.get(cid, 0) + 1
+        if p.get("isFinished"):
+            finished_by_cid[cid] = finished_by_cid.get(cid, 0) + 1
+    for cid, n in video_counts.items():
+        set_chapter_point_snapshot(
+            course_key, cid,
+            video_total=n, video_finished=finished_by_cid.get(cid, 0),
+            has_video=True)
+    return video_counts
+
+
+def set_chapter_point_snapshot(
+    course_key: str,
+    cid: str,
+    *,
+    video_total: int,
+    video_finished: int,
+    has_video: bool,
+) -> None:
+    """记录一章的实时点级快照（video 点数量 / 已 finished 数量）。"""
+    pts = load_chapter_points(course_key)
+    pts[cid] = {
+        "video_total": int(video_total),
+        "video_finished": int(video_finished),
+        "has_video": bool(has_video),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    save_chapter_points(course_key, pts)
+
+
+def chapter_done_from_snapshot(cid: str, points: dict) -> Optional[bool]:
+    """用点级快照判断一章是否"真做完"（所有已知 video 点全部 finished）。
+
+    Returns:
+        True  → 快照显示该章所有 video 点均 finished（应视为完成）
+        False → 快照显示还有未 finished 的 video 点（绝不能当 done/success）
+        None  → 无该章快照（无法据此判定，交给 registry COMPLETED 逻辑）
+    """
+    snap = (points or {}).get(cid)
+    if not snap:
+        return None
+    if not snap.get("has_video"):
+        return None                    # 非视频章 → 不参与 video-done 判定
+    total = int(snap.get("video_total", 0))
+    fin = int(snap.get("video_finished", 0))
+    if total <= 0:
+        return None
+    return fin >= total
+
+
+POINTS_SNAPSHOT_TTL_S = 24 * 3600     # 点级快照参与拆分的时效上限（1 天）
+
+
+def _snapshot_is_fresh(snap: dict, now, ttl_s: int) -> bool:
+    """该条快照还在时效内吗？时间戳缺失/畸形/无时区 → 一律算不新鲜。
+
+    没有 `updated_at` 就无法证明它是谁在什么时候读的，宁可当作没有信息（下游回退到
+    默认 1 点），也不能拿它去宣布某章有多个视频点。
+    """
+    raw = str((snap or {}).get("updated_at") or "")
+    if not raw:
+        return False
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (now - ts).total_seconds() <= ttl_s
+
+
+def video_counts_from_points(points_map: dict, *, now=None,
+                             ttl_s: int = POINTS_SNAPSHOT_TTL_S) -> dict:
+    """点级快照 → discovery 需要的 `{chapter_id: video_total}`。
+
+    只收"确实有视频、数量已知**且新鲜**"的章。读不到或无视频的章**不进** counts：传 0 等于
+    宣布该章没有视频点，会被下游当成非视频章处理 —— 那正是 §4.2 那类误降的来路。
+
+    为什么要时效（#23）：这文件被 gitignore，云端每次干净检出都没有它，本地却可能留着几天前
+    那批 —— 同一段代码在两端看到的真源不一样。实测本地 9/20 那批已在说谎（4730 写 2、今天三路
+    实测 1；4738 写 3、真站与探测都是 2），拿它当拆分数就会把已经收掉的幻影 `:videoN` 重新 mint
+    回账本。陈旧条目在此被丢掉后，行为与云端一致：按默认 1 点走，等一次新的 live 复核再补计数。
+    """
+    moment = now or datetime.now(timezone.utc)
+    out = {}
+    for cid, snap in (points_map or {}).items():
+        snap = snap or {}
+        if not snap.get("has_video"):
+            continue
+        if not _snapshot_is_fresh(snap, moment, ttl_s):
+            continue
+        total = int(snap.get("video_total") or 0)
+        if total > 0:
+            out[str(cid)] = total
+    return out
+
+
+def merge_done_with_points(done_ids: set, cid_set: set, points: dict) -> set:
+    """把 done = registry衍生的集合，与点级快照做校准：
+      - 有完视频点未完的快照 ⇒ 即使 registry 标 done，也要踢掉（不 skip）。
+    """
+    out = set(done_ids)
+    for cid in list(out):
+        st = chapter_done_from_snapshot(cid, points)
+        if st is False:
+            out.discard(cid)
+    return out
+
+
+# ── Queue Reconciliation ───────────────────────────────────────────
+
+# ── Queue Reconciliation ───────────────────────────────────────────
+
+def chapter_tasks(registry: dict[str, TaskRecord], chapter_id: str) -> list[TaskRecord]:
+    """本章节的所有任务（task_type 区分）。"""
+    return [t for t in registry.values() if t.chapter_id == chapter_id]
+
+
+def chapter_aggregate_status(registry: dict[str, TaskRecord], chapter_id: str) -> str:
+    """E6.2 §7: Chapter status = aggregate(Task statuses)。
+
+    - 没有任何任务 → UNKNOWN
+    - 所有任务均 COMPLETED → COMPLETED
+    - 存在 RUNNING/VERIFYING → RUNNING
+    - 存在 FAILED → FAILED（有未完成任务）
+    - 否则（存在 PENDING/DISCOVERED/READY/UNKNOWN/unsupported）→ PENDING
+
+    只有「所有 task 都已完成」才把章节判为 COMPLETED，从而防止
+    「video 已完成」单独覆盖整个 chapter（E6.2 §9）。
+    """
+    recs = chapter_tasks(registry, chapter_id)
+    if not recs:
+        return "UNKNOWN"
+    statuses = {r.status for r in recs}
+    if statuses <= {"COMPLETED"}:
+        return "COMPLETED"
+    if "STALE" in statuses:
+        # 有任务被实时状态标记 STALE → 章节不等于完成，需复核
+        return "STALE"
+    if statuses & {"RUNNING", "VERIFYING"}:
+        return "RUNNING"
+    if "FAILED" in statuses:
+        return "FAILED"
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    return "PENDING"
+
+
+def done_chapter_ids_from_registry(registry: dict[str, TaskRecord]) -> set[str]:
+    """从 Registry 派生已完成的章节集合（derived cache，非权威）。
+
+    E6.2：一个 chapter 只有当其「所有 task 都完成」才算 done。
+    单有一个 video task 是 COMPLETED 但该章仍有其它 pending/unsupported task，
+    不算完成 → 不会因 video 完成而掩盖整个 chapter。
+
+    - SERVER_VERIFIED / RECHECK / UI 证据的 COMPLETED task 才算完成。
+    - NONE/空证据 → 不计入。
+    绝不从 nextUnit / URL chapterId change / 页面导航推断完成。
+    """
+    done: set[str] = set()
+    chapters_with_task = {t.chapter_id for t in registry.values() if t.chapter_id}
+    for cid in chapters_with_task:
+        recs = chapter_tasks(registry, cid)
+        if not recs:
+            continue
+        all_done = True
+        for t in recs:
+            if t.status != "COMPLETED":
+                all_done = False
+                break
+            lvl = (t.completion_evidence.type
+                   if t.completion_evidence and t.completion_evidence.type != "NONE"
+                   else t.verification.level)
+            if lvl not in ("SERVER_VERIFIED", "RECHECK", "UI"):
+                all_done = False
+                break
+        if all_done:
+            done.add(cid)
+    return done
+
+
+def coarse_parked_verified_points(registry: dict) -> list[str]:
+    """列出「点级已被服务端确认、只是被章级粗读数打下来、且无人承载」的点。
+
+    这些点 `reconcile_queue` 不再投放。纯留痕用 —— 静默停放是 D5 那族归因丢失的来路，
+    调度器必须把它打出来。（判据本体见 `TaskRecord.revoked_by_chapter_reading`。）
+    """
+    return sorted(tid for tid, t in (registry or {}).items()
+                  if t.point_is_server_verified() and t.revoked_by_chapter_reading()
+                  and not t.rollback_count)
+
+
+def _task_id_natural_key(task_id: str) -> tuple:
+    """task_id → 自然序键（A1）：'<cid>:video10' 必须排在 ':video2' 之后。
+
+    字典序里 '1' < '2'，单章 ≥10 个视频时 ':video10' 会插队到 ':video2' 前面，
+    学习顺序错乱（暗雷：当前课程每章最多 4 个视频，故未实测触发）。把字符串
+    按数字段切开，数字段以 int 参与比较，非数字段以文本参与比较；两类段各自
+    带类型标签保证跨类型比较稳定（int 永远不与 str 直接比较）。
+    纯函数，可单测。
+    """
+    parts = re.split(r"(\d+)", task_id or "")
+    return tuple(
+        (1, int(p), "") if p.isdigit() else (0, 0, p)
+        for p in parts
+    )
+
+
+def reconcile_queue(course_key: str, registry: dict[str, TaskRecord],
+                    done_chapter_ids: set[str] | None = None,
+                    points_map: Optional[dict] = None) -> ExecutionQueue:
+    """从 Registry（+可选 done 集合）重算 Execution Queue。
+
+    Registry 是权威状态；done_chapter_ids 是 derived cache：
+      - 未显式传入时，自动从 registry 内 COMPLETED+证据 推导。
+      - COMPLETED(有证据) → 不进入 READY
+      - PENDING / DISCOVERED / READY → 进入 READY
+      - UNKNOWN → 不自动执行（除非 policy 提升）
+      - RUNNING → 根据 lease 判断（过期则视为失败/可重试）
+      - FAILED → 未达阈值可重试进 READY；已达阈值跳过
+      - BLOCKED → 不执行
+    """
+    if done_chapter_ids is None:
+        done_chapter_ids = done_chapter_ids_from_registry(registry)
+
+    ready: list[TaskRecord] = []
+
+    # 章级整章冻结：一旦某章有任一 BLOCKED（达失败上限）任务，将该章整体冻结，
+    # 避免 reconcile/实时重建（同章衍生/lTO新 task_id）绕过「单任务 BLOCKED」又跑回同一章。
+    blocked_chapters = {
+        (t.chapter_id or "") for t in registry.values()
+        if getattr(t, "status", "") == "BLOCKED"
+    }
+
+    # 点级真源：一个已被服务端确认过的点**不再重投**——多视频章里剩余的学习量由它的
+    # 兄弟点记录（`<cid>:videoN`）承载，重投已过的第 1 点只会白耗一次投递（第 3 轮 M0
+    # 的"不重复 ❌"正是这个：`<cid>` 已 SERVER_VERIFIED，却被后续 run 标成 FAILED 后
+    # 以 priority 0 反复回队，`:video2` 永远排在它后面）。
+    # 章内若没有能承载的兄弟点，只有当"该点没过"这件事还有点级证据时才重投
+    # —— 宁可多重投一次，也不许把整章永久搁浅。但**章级读数**（"整章还有别的点没完"）
+    # 不算这种证据：run 35706997064 实测，单视频章 1217304731 靠这条被反复重投，
+    # 而它的 objectid 9/11 就被 isPassed 确认过 —— 站点不再给已过的点播放回合
+    # （180s 里 paused=True/readyState=0/ct=0 一次没动），于是每晚白吃一次唯一的
+    # 点位预算，第三晚还会把整章冻成 BLOCKED。
+    # 例外只有一条：`rollback_count>0` 的"回退章"（曾确认完成、又被服务端推翻）走原有的
+    # 优先补齐路径 —— 那是独立信号，不由这条章级读数判据接管（9/20 定案，1217304722）。
+    carried_chapters = {
+        (t.chapter_id or "") for t in registry.values()
+        if (t.task_type or "video") == "video" and not t.point_is_server_verified()
+    }
+
+    def _lease_expired(t: TaskRecord) -> bool:
+        exp = t.lease.expires_at_utc
+        if not exp:
+            return True
+        try:
+            return datetime.fromisoformat(exp) <= datetime.now(timezone.utc)
+        except (ValueError, TypeError):
+            return True
+
+    for t in registry.values():
+        # 章级冻结：该章已有 BLOCKED → 该章全部 task 不再入队（防同章衍生 task 复活）。
+        if (t.chapter_id or "") in blocked_chapters:
+            continue
+        # E6.2: Queue 只接受真正的可执行 task（video）。
+        # 非 video 任务（quiz/discussion/other/unsupported）当前不被 video runtime 支持，
+        # 不进入队列（避免 runtime 误认为可学视频）。
+        if (t.task_type or "video") != "video":
+            continue
+        # 洞1: 若点级快照已知该章没有任何视频点（纯文档/知识扩展章），即使其
+        # 被标为 video task，也不进入 READY（没有可播的视频 → 不应被拉出来跑）。
+        if points_map:
+            snap = (points_map or {}).get(t.chapter_id)
+            if snap and not snap.get("has_video"):
+                continue
+        if t.point_is_server_verified():
+            carried = (t.chapter_id or "") in carried_chapters
+            # 新增的只有一种形状：没人承载 + 只是被章级读数打下来 + 也不是回退章。
+            # 有兄弟承载时按原规则停放；回退章（`rollback_count>0`）在没人承载时
+            # 仍走优先补齐（9/20 定案，1217304722）—— 那独立信号不归这条判据接管。
+            if carried or (t.revoked_by_chapter_reading() and not t.rollback_count):
+                continue
+        # 已完成（有证据）→ 跳过
+        if t.status == "COMPLETED" and done_chapter_ids and t.chapter_id in done_chapter_ids:
+            continue
+        if t.status == "COMPLETED":
+            continue
+        # BLOCKED → 不执行
+        if t.status == "BLOCKED":
+            continue
+        if t.status == "UNKNOWN":
+            # 不自动执行；除非是「回退章」（曾确认完成、又被服务器推翻为 UNKNOWN）——
+            # 这类须优先补齐（否则一直不重跑，形成「已完成记录消失」的感知回退）。
+            if t.rollback_count > 0 and (t.task_type or "video") == "video":
+                ready.append(t)
+            continue
+        # FAILED → 根据 retry policy
+        if t.status == "FAILED":
+            if t.consecutive_failures >= t.max_attempts:
+                continue
+            ready.append(t)
+            continue
+        # RUNNING / VERIFYING → lease 过期可重新入队，否则跳过
+        if t.status in ("RUNNING", "VERIFYING"):
+            if not _lease_expired(t):
+                continue
+            ready.append(t)
+            continue
+        # DISCOVERED / PENDING / READY 等其它可执行态
+        if t.is_executable:
+            ready.append(t)
+
+    # 排序：回退章（曾确认完成、又被服务器推翻，rollback_count>0）最优先补齐，
+    #       → 有 chapter_id 优先 → 再按目录顺序 → 同章内按 task_id 自然序
+    #       （A1：数字段按数值比较，':video10' 不再插队到 ':video2' 前面）。
+    #       即：先重跑被回退的章，再开新课。
+    ready.sort(key=lambda t: (
+        0 if t.rollback_count > 0 else 1,
+        0 if t.chapter_id else 1,
+        t._ch_idx, t._cell_idx, _task_id_natural_key(t.task_id),
+    ))
+
+    items = []
+    for i, t in enumerate(ready):
+        items.append({
+            "task_id": t.task_id,
+            "chapter_id": t.chapter_id or "",
+            "priority": i,
+            "state": "READY" if t.status != "FAILED" else "RETRY",
+            "course_key": course_key,
+        })
+
+    q = ExecutionQueue(
+        items=items,
+        reconciled_at_utc=datetime.now(timezone.utc).isoformat(),
+    )
+    save_queue(course_key, q)
+    return q
+
+
+def pick_next_task(queue: ExecutionQueue) -> Optional[TaskRecord]:
+    """从队列中选第一个任务。返回 registry 中的 TaskRecord 对象。"""
+    if not queue.items:
+        return None
+    first = queue.items[0]
+    reg = load_registry(first.get("course_key", ""))
+    return reg.get(first["task_id"])
+
+
+def video_total_from_observation(course_key: str, cid: str, *, observed: int,
+                                 reason: str = "") -> bool:
+    """用一次真实页面观测纠正该章快照的视频点总数；真有变化才写，返回是否写了。
+    
+    快照是 `build_tasks_from_discovery` 拆分数量的唯一来源（经
+    `video_counts_from_points`），而它无 TTL、不当队首候选就不刷新 —— 一次读错就会
+    每轮重新 mint 出不存在的 `:videoN`（§4.13）。`video_finished` 一并夹到不超过
+    total，避免出现 finished>total 的倒挂快照。
+    """
+    try:
+        obs = int(observed)
+    except (TypeError, ValueError):
+        return False
+    if obs < 1:
+        return False
+    pts = load_chapter_points(course_key)
+    snap = pts.get(cid) or {}
+    if int(snap.get("video_total") or 0) == obs:
+        return False
+    entry = {
+        "video_total": obs,
+        "video_finished": min(int(snap.get("video_finished") or 0), obs),
+        "has_video": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if reason:
+        entry["corrected_reason"] = str(reason)[:200]
+    pts[cid] = entry
+    save_chapter_points(course_key, pts)
+    return True

@@ -1,0 +1,369 @@
+name: run (MVP - learn one video task naturally)
+
+# E5: 支持 Initialize / Run / Switch 三种操作模式
+#
+# 用法:
+#   workflow_dispatch:
+#     inputs:
+#       action: initialize | run | switch  (默认 run)
+#       course_url: ...
+#       chapter_id: ... (run 模式可选)
+#
+# 失败诊断策略:
+#   1. 主步骤 continue-on-error: true — 引擎失败不终止 job
+#   2. 诊断步骤 if: always() — 无论成败都打印 failure_stage
+#   3. 产物上传 if: always() — 截图/evidence 始终进 artifact
+#   4. 最终判定步骤 if: always() — 读 result.exit_code 控制红绿
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "操作模式: initialize/run/scheduler/switch/bootstrap/probe"
+        required: false
+        default: "run"
+        type: choice
+        options:
+          - initialize
+          - run
+          - scheduler
+          - switch
+          - bootstrap
+          - probe
+      course_url:
+        description: "学习通课程/章节 studentstudy URL"
+        required: false
+        default: ""
+      chapter_id:
+        description: "(可选) 欲学习的章节 id，缺省取 URL 中的 chapterId"
+        required: false
+        default: ""
+      max_chapters:
+        description: "最多自动学习的视频任务点数量（B 档默认 4；手动可覆盖）"
+        required: false
+        default: "4"
+      max_attempts:
+        description: "视频 iframe/metadata 瞬态失败的最大尝试次数（默认 2）"
+        required: false
+        default: "2"
+  schedule:
+    # B 档（2026-10-09 用户选定）：每 3 小时一轮、每轮 4 个视频点（GHA_MAX=4）
+    # → 理论 32 点/天，剩余 ~52 点约 2 天收尾（GHA cron 有 1-5h 拥塞延迟，实际 2-3 天）。
+    # GitHub cron 是 UTC：7 1,4,7,10,13,16,19,22 = 北京 9:07/12:07/15:07/18:07/21:07/0:07/3:07/6:07。
+    # 分钟取 7 不取 0：整点是 schedule 队列最拥塞的时刻。concurrency 组保证
+    # 前一轮未结束时后续触发只排队不并行（登录频率是风控敏感项，必须串行）。
+    - cron: '7 1,4,7,10,13,16,19,22 * * *'
+
+permissions:
+  contents: write  # 允许将 state/ 持久化回仓库
+
+jobs:
+  learn:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    concurrency:
+      group: xuexitong-active-course
+      cancel-in-progress: false
+    env:
+      CX_USER: ${{ secrets.CX_USER }}
+      CX_PASS: ${{ secrets.CX_PASS }}
+      COURSE_URL: ${{ github.event.inputs.course_url }}
+      COURSE_URL_SECRET: ${{ secrets.COURSE_URL }}
+      GHA_ACTION: ${{ github.event.inputs.action || 'run' }}
+      GHA_CHAPTER: ${{ github.event.inputs.chapter_id }}
+      GHA_MAX: ${{ github.event.inputs.max_chapters || '4' }}
+      GHA_ATTEMPTS: ${{ github.event.inputs.max_attempts || '2' }}
+      PLAYWRIGHT_JSBUNDLE: ""
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 确保能读取/写入 state/ 目录
+          token: ${{ secrets.GH_PAT || github.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Install system deps (Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb x11-utils fonts-noto-cjk
+          pkill -f "Xvfb :99" || true
+          echo "system-deps-installed"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright==1.63.0
+          playwright install chromium
+          python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print('chromium_version:', p.chromium.launch().version); p.stop()"
+          echo "python-deps-installed"
+
+      # ── 设置 PYTHONPATH（确保 resolvers/state 可导入）──────────────
+      - name: Set PYTHONPATH
+        run: echo "PYTHONPATH=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+
+      # ── Initialize 模式: 仅解析 URL，不执行学习 ──────────────────
+      - name: Initialize course
+        if: github.event.inputs.action == 'initialize'
+        run: |
+          echo "=== Initialize Course ==="
+          python app/run.py --action initialize \
+            --course-url "$COURSE_URL" \
+            --output ./evidence/result.json
+          echo "initialize-complete"
+
+      # ── Switch 模式: 解析并切换课程，不执行学习 ───────────────────
+      - name: Switch course
+        if: github.event.inputs.action == 'switch'
+        run: |
+          echo "=== Switch Course ==="
+          python app/run.py --action switch \
+            --course-url "$COURSE_URL" \
+            --output ./evidence/result.json
+          echo "switch-complete"
+
+      # ── Probe 模式: 登录后转储章节真实目录树 DOM（诊断 fetch 空）────
+      - name: Probe catalog
+        if: github.event.inputs.action == 'probe'
+        continue-on-error: true
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 -ac &
+          export DISPLAY=:99
+          sleep 2
+          ARGS="--course-url \"$COURSE_URL\" --out ./evidence/probe.json --wait-s 12"
+          if [ -n "$GHA_CHAPTER" ]; then ARGS="$ARGS --chapter-id $GHA_CHAPTER"; fi
+          echo ">> python app/probe_catalog.py $ARGS"
+          eval "python app/probe_catalog.py $ARGS"
+          echo "probe-complete"
+
+      # ── Bootstrap 模式: 账号首次进该课程，从服务端真源材料化 + 写 progress（P0-3）──
+      # 轻量自检：不开完整 scheduler，只做一次服务端材料化并打印 server_completed/任务数。
+      # 幂等：该账号该课程已材料化过 → NOOP。用于新 fork 者一键确认该课程可被本账号访问。
+      - name: Bootstrap course (P0-3)
+        if: github.event.inputs.action == 'bootstrap'
+        continue-on-error: true
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 -ac &
+          export DISPLAY=:99
+          sleep 2
+          python scripts/bootstrap_p03_real.py \
+            --course-url "$COURSE_URL" --out ./evidence/result.json \
+            || true
+          echo "bootstrap-complete"
+
+      # ── Scheduler 模式: 自动决定并执行（内置 TDVP 探针）────────────
+      - name: Run Scheduler
+        if: github.event.inputs.action == 'scheduler' || (github.event.schedule && !github.event.inputs.action)
+        continue-on-error: true
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 -ac &
+          export DISPLAY=:99
+          sleep 2
+          # enc/openc 签名参数由 Secrets 注入（2026-10-09 实测：超星页面强制校验
+          # enc，缺失时直接返回「enc校验失败」→ 目录树无法提取）。仓库里只存
+          # 脱敏 URL，注入只发生在 runner 工作区，提交前由 sanitize_state 统一剥离。
+          if [ -n "$COURSE_URL_SECRET" ]; then
+            python scripts/sanitize_state.py --inject "$COURSE_URL_SECRET" || true
+          fi
+          XD_ARGS="--xvfb-display :99 --max-attempts $GHA_ATTEMPTS"
+          if [ -n "$COURSE_URL" ]; then
+            XD_ARGS="$XD_ARGS --course-url \"$COURSE_URL\""
+          fi
+          if [ -n "$GHA_CHAPTER" ]; then XD_ARGS="$XD_ARGS --chapter-id $GHA_CHAPTER"; fi
+          XD_ARGS="$XD_ARGS --max-chapters $GHA_MAX"
+          SCHEDULER_ARGS="--action scheduler --output ./evidence/result.json $XD_ARGS \
+            --trigger "${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}" --run-id ${{ github.run_id }}"
+          echo ">> python app/run.py $SCHEDULER_ARGS"
+          eval "python app/run.py $SCHEDULER_ARGS"
+          echo "scheduler-complete"
+
+      # ── Run 模式: 执行视频学习 ────────────────────────────────────
+      - name: Run MVP learn (headed + Xvfb)
+        if: github.event.inputs.action == 'run'
+        continue-on-error: true
+        run: |
+          Xvfb :99 -screen 0 1440x900x24 -ac &
+          export DISPLAY=:99
+          sleep 2
+          xdpyinfo -display :99 >/dev/null 2>&1 || echo "xdpyinfo failed"
+          ARGS="--course-url \"$COURSE_URL\" --output ./evidence/result.json --xvfb-display :99 --max-attempts $GHA_ATTEMPTS"
+          if [ -n "$GHA_CHAPTER" ]; then ARGS="$ARGS --chapter-id $GHA_CHAPTER"; fi
+          ARGS="$ARGS --max-chapters $GHA_MAX"
+          echo ">> python app/run.py $ARGS"
+          eval "python app/run.py $ARGS"
+          echo "mvp-run-complete"
+
+      # ── 提交状态更新（run/scheduler 模式成功后）───────────────────
+      - name: Commit state update
+        if: (github.event.inputs.action != '' || github.event.schedule) && success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Committing state updates ==="
+          git config user.name "xuexitong-mvp"
+          git config user.email "mvp@xuexitong.local"
+          # 安全防线：绝不把 Cookie / 会话 / 凭据文件加进提交
+          git rm -r --cached state/cookies.json .cache 2>/dev/null || true
+          git update-index --skip-worktree state/cookies.json .cache 2>/dev/null || true
+          # 提交前统一剥离 enc/openc 签名参数（append-only 防线：引擎运行期可能
+          # 把带签名的 URL 写回 state —— 公共仓库永不携带）
+          python scripts/sanitize_state.py || true
+          git add state/
+          git diff --cached --quiet || git commit -m "chore(state): update course state after ${{ github.event.inputs.action || 'schedule' }} run"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main || echo "push skipped (may be read-only fork)"
+
+      # ── 诊断步骤：always 执行 ─────────────────────────────────────
+      - name: Dump failure diagnostics
+        if: always()
+        run: |
+          echo "=== MVP diagnostics ==="
+          python3 - <<'PY'
+          import json, sys, glob, os
+          files = glob.glob('./evidence/result*.json') + glob.glob('./evidence/run_*.json')
+          if not files:
+              print("## ⚠️ No result file produced — check action above")
+              sys.exit(0)
+          with open(files[0]) as f:
+              r = json.load(f)
+          action = r.get("action", "run")
+          if action == "scheduler":
+              print(f"══════════ SCHEDULER DIAGNOSTICS ══════════")
+              print(f"action:          {action}")
+              print(f"decision:        {r.get('decision', 'N/A')}")
+              print(f"result:          {r.get('result', 'N/A')}")
+              print(f"trigger:         {r.get('trigger', 'N/A')}")
+              print(f"course_key:      {r.get('course_key', 'N/A')}")
+              print(f"verdict:         {r.get('verdict', 'N/A')}")
+              print(f"timing_s:        {r.get('timing_s', 'N/A')}")
+              print(f"error:           {r.get('error', 'N/A')}")
+              # E6.1 §11：把底层 runtime evidence（failure_stage/checks/passed/run_id）surface 出来
+              evd = r.get("evidence") or {}
+              if isinstance(evd, dict) and evd:
+                  print(f"── runtime evidence ──")
+                  print(f"  failure_stage:  {evd.get('failure_stage')}")
+                  print(f"  runtime_result: {evd.get('runtime_result')}")
+                  print(f"  passed_count:   {evd.get('passed_count')}/10")
+                  print(f"  run_id:         {evd.get('run_id')}")
+                  cks = evd.get("checks") or {}
+                  if isinstance(cks, dict):
+                      failed = [k for k, v in cks.items() if v is False]
+                      print(f"  failed_checks:  {failed or 'none'}")
+              sys.exit(0)
+          res = r.get("result", {})
+          if not isinstance(res, dict):
+              print(f"## ⚠️ Unexpected result format: {res}")
+              sys.exit(0)
+          ev = r.get("evidence", {})
+          checks = ev.get("checks", {})
+          diag = ev.get("diagnostics", {})
+          action = res.get("action", "run")
+          print(f"══════════ {action.upper()} DIAGNOSTICS ══════════")
+          print(f"action:          {action}")
+          print(f"verdict:         {res.get('verdict')}")
+          print(f"failure_stage:   {res.get('failure_stage')}")
+          print(f"passed_count:    {res.get('passed_count')}/10")
+          print(f"retry_count:     {res.get('retry_count')}")
+          print(f"timing_s:        {res.get('timing_s')}")
+          print(f"crash:           {res.get('crash') or 'none'}")
+          print(f"course_key:      {res.get('course_key') or 'N/A'}")
+          print()
+          # 关键 checks 状态
+          failed_checks = [k for k, v in checks.items()
+                          if isinstance(v, bool) and not v]
+          if failed_checks:
+              print("── failed checks ──")
+              for k in failed_checks:
+                  print(f"  ✗ {k}")
+              print()
+          # 诊断上下文
+          print("── diagnostics ──")
+          if diag:
+              for dk, dv in diag.items():
+                  if isinstance(dv, (dict, list)):
+                      s = json.dumps(dv, ensure_ascii=False)[:200]
+                  else:
+                      s = str(dv)[:200]
+                  print(f"  {dk}: {s}")
+          else:
+              print("  (no diagnostics captured)")
+          for ek in ("key_console", "errors"):
+              vals = ev.get(ek)
+              if vals:
+                  print(f"  {ek}: {[str(x)[:120] for x in vals[-5:]]}")
+          # 课程状态
+          cs = r.get("course_state")
+          if cs:
+              print("── course_state ──")
+              print(f"  status: {cs.get('status')}")
+              print(f"  run_count: {cs.get('run_count')}")
+              print(f"  success_count: {cs.get('success_count')}")
+              print(f"  last_run: {cs.get('last_run')}")
+              print(f"  progress: {cs.get('progress')}")
+          print("══════════════════════════════════════")
+          PY
+          echo ""
+          echo "Evidence artifacts:"
+          ls -la evidence/ 2>/dev/null || echo "  no evidence dir"
+          ls -la /tmp/diag_*.png 2>/dev/null || echo "  no diag screenshots"
+          echo ""
+          echo "State directory:"
+          ls -la state/ 2>/dev/null || echo "  no state dir"
+          ls -la state/courses/ 2>/dev/null || echo "  no courses dir"
+
+      # ── 产物上传：always 执行 ─────────────────────────────────────
+      - name: Upload Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mvp-evidence-${{ github.run_id }}
+          path: |
+            evidence/result*.json
+            evidence/*.scheduler.stdout.log
+          # 隐私收窄（2026-10-09 审查）：
+          # 1. 截图（diag_*.png）含学习通页面显示的【真实姓名】→ 不上传
+          # 2. chapter_*.json 证据里存有含 enc/openc 签名的课程 URL → 不上传
+          # 3. state/、app/ 与公共仓库内容重复且 state 含运行期数据 → 不上传
+          # 保留：汇总结果与调度器日志（已核无凭据/签名/姓名）
+            resolvers/
+            /tmp/diag_*.png
+          retention-days: 30
+
+      # ── 最终判定：用 exit_code 控制红绿 ───────────────────────────
+      - name: Final verdict
+        if: always()
+        run: |
+          CODE=$(python3 - <<'PY'
+          import json, glob, sys
+          files = glob.glob('./evidence/result*.json') + glob.glob('./evidence/run_*.json')
+          if not files:
+              print("1", end="")
+              sys.exit(0)
+          try:
+              r = json.load(open(files[0]))
+              action = r.get("action", "run")
+              if action in ("initialize", "switch", "probe", "bootstrap"):
+                  print("0", end="")
+              elif action == "scheduler":
+                  sched_result = r.get("result", "FAILED")
+                  if sched_result in ("NOOP", "SUCCESS", "BLOCKED"):
+                      print("0", end="")
+                  else:
+                      print("1", end="")
+              else:
+                  res = r.get("result", {})
+                  if isinstance(res, dict):
+                      print(res.get("exit_code", 1), end="")
+                  else:
+                      print("1", end="")
+          except Exception:
+              print("1", end="")
+          PY
+          )
+          echo "Result exit_code=$CODE"
+          exit "$CODE"

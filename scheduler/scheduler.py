@@ -1,0 +1,2119 @@
+"""Scheduler Module for E6
+
+Decides WHEN to run based on persistent course state.
+Uses existing E5 runtime via app/run.py.
+
+Execution result types:
+    RUN     - There is work to do, invoke runtime
+    NOOP    - No work, not an error
+    BLOCKED - Cannot execute, needs manual intervention
+    ERROR   - Runtime/infrastructure error
+
+Concurrency:
+    Uses GitHub Actions concurrency group per active course.
+   同一 active course 同一时间只能有一个执行实例。
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Literal, Optional
+
+# 注意：stdio 编码加固**不放这里**。库模块在 import 时改 sys.stdout，会让
+# "谁先打印谁就留在旧编码里"—— 第 3 轮 M0 的父日志因此混编（首行 gbk、其后 utf-8）。
+# 加固属于进程入口职责：见 scripts/ci_local_run.py 与 app/run.py。
+
+# 类型定义
+SchedulerResult = Literal["SUCCESS", "NOOP", "BLOCKED", "FAILED", "ENV_FAILED"]
+SchedulerDecision = Literal["RUN", "NOOP", "BLOCKED", "ERROR"]
+TriggerType = Literal["manual", "schedule"]
+
+# BLOCKED 熔断自动复位策略（cooldown / retry）。
+# 语义：
+#   - schedule 每轮调度机会计数 blocked_hits。
+#   - 每累计到 blocked_retry_interval（连续被 BLOCKED 拒的调度次数）后，自动放行一次 probe/retry。
+#   - manual 触发不受 cooldown 约束，永远允许立即 probe/retry。
+# 可通过环境变量 XUE_BLOCKED_RETRY_INTERVAL 覆盖（默认 4），无需改代码即可调成 2/4/6...。
+def _blocked_retry_interval() -> int:
+    import os
+    raw = os.environ.get("XUE_BLOCKED_RETRY_INTERVAL", "4")
+    try:
+        return max(1, int(raw))
+    except Exception:
+        return 4
+
+
+@dataclass
+class SchedulerState:
+    """Scheduler 运行状态（写入 course state 的 scheduler 字段）。"""
+    last_scheduled_at: Optional[str] = None      # ISO UTC
+    last_started_at: Optional[str] = None        # ISO UTC
+    last_finished_at: Optional[str] = None       # ISO UTC
+    last_result: Optional[SchedulerResult] = None
+    last_run_id: Optional[str] = None            # GitHub run ID
+    last_trigger: Optional[TriggerType] = None
+    consecutive_failures: int = 0
+    execution_id: Optional[str] = None           # 本次执行唯一 ID
+    attempt: int = 0                             # 当前尝试次数
+    # ── BLOCKED 熔断 / cooldown 状态 ──────────────────────────────
+    blocked_since: Optional[str] = None          # 进入 BLOCKED 的时间（ISO UTC）
+    blocked_hits: int = 0                        # 进入 BLOCKED 后，被 schedule 拒的调度次数
+    blocked_retry_interval: int = 0              # 0 = 使用默认/环境变量；>0 = 显式覆盖
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "SchedulerState":
+        return cls(**{k: v for k, v in d.items()
+                     if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class ExecutionResult:
+    """单次执行的完整结果。"""
+    decision: SchedulerDecision
+    result: SchedulerResult
+    trigger: TriggerType
+    course_key: str
+    run_id: str
+    timing_s: float
+    passed: bool
+    verdict: str
+    failure_stage: Optional[str] = None
+    error: Optional[str] = None
+    timestamp_utc: str = ""
+    evidence: Optional[dict] = None      # 底层 runtime evidence（不能丢，见 E6.1 §11）
+    chapters_attempted: list = field(default_factory=list)   # 本轮尝试的章节 id
+    chapters_failed: list = field(default_factory=list)      # 本轮失败的章节 id（含 TIMEOUT）
+    chapters_timed_out: list = field(default_factory=list)   # 本轮超时(watchdog)的章节 id
+    chapters_corrected: list = field(default_factory=list)    # 本轮按页面实测纠正账本错的章
+    chapters_env_failed: list = field(default_factory=list)   # 本轮环境/会话级失败的章（不计章节失败）
+
+    def __post_init__(self):
+        if not self.timestamp_utc:
+            self.timestamp_utc = datetime.now(timezone.utc).isoformat()
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def _state_file(course_key: str) -> Path:
+    """获取课程状态文件路径。"""
+    from state.course_state import COURSES_DIR
+    return COURSES_DIR / f"{course_key}.json"
+
+
+def load_scheduler_state(course_key: str) -> Optional[SchedulerState]:
+    """加载课程的 scheduler 状态。"""
+    try:
+        from state.course_state import load_course_state
+        state = load_course_state(course_key)
+        if state and hasattr(state, 'scheduler') and state.scheduler:
+            return SchedulerState.from_dict(state.scheduler)
+    except Exception:
+        pass
+    return SchedulerState()
+
+
+def save_scheduler_state(course_key: str, ss: SchedulerState) -> None:
+    """保存 scheduler 状态到 course state（per-course 锁内原子 RMW）。"""
+    try:
+        from state.course_state import update_course_state
+        sd = ss.to_dict()
+
+        def _merge(state):
+            if state is None:
+                return None
+            if not hasattr(state, 'scheduler'):
+                state.scheduler = {}
+            state.scheduler.update(sd)
+            return state
+
+        update_course_state(course_key, _merge)
+    except Exception as e:
+        print(f"[scheduler] Error saving state: {e}", file=sys.stderr)
+
+
+def _blocked_decision(active_key: str, ss: SchedulerState, trigger: TriggerType,
+                      blocked_reason: str) -> tuple[SchedulerDecision, str]:
+    """统一处置「课程处于 BLOCKED」的情况——显式决定何时允许解除 BLOCKED。
+
+    规则（用户定案，不可用隐式门禁代替）：
+        manual       = 人工主动干预，允许立即 probe/retry（return RUN）
+        schedule     = 遵守 cooldown：每累计 blocked_retry_interval 次调度
+                       机会，自动放行一次 retry（return RUN 并清零计数）；
+                       否则只累计 blocked_hits 并 return BLOCKED。
+
+    Args:
+        active_key:      课程 identity key（用于持久化 cooldown 计数）
+        ss:              当前 SchedulerState（会被改写并持久化）
+        trigger:         manual / schedule
+        blocked_reason:  进入 BLOCKED 的原因描述
+
+    Returns:
+        (decision, reason)
+    """
+    interval = int(ss.blocked_retry_interval or _blocked_retry_interval())
+    interval = max(1, interval)
+
+    # 记录首次进入 BLOCKED 的时间（用于诊断）。
+    if not ss.blocked_since:
+        ss.blocked_since = datetime.now(timezone.utc).isoformat()
+
+    if trigger == "manual":
+        # 人工主动干预：立即放行，无需等待 cooldown。
+        # 不消费 blocked_hits（它只统计 schedule 的调度机会）。
+        return "RUN", f"manual override: {blocked_reason}; allow immediate probe/retry"
+
+    # schedule：遵守 cooldown
+    ss.blocked_hits += 1
+    if ss.blocked_hits >= interval:
+        # 达到复位点：放行一次 probe/retry，并清零调度计数。
+        ss.blocked_hits = 0
+        save_scheduler_state(active_key, ss)
+        return "RUN", (f"BLOCKED cooldown expired ({interval} schedules), "
+                       "auto retry granted")
+
+    save_scheduler_state(active_key, ss)
+    return "BLOCKED", (f"{blocked_reason}; cooldown "
+                       f"{ss.blocked_hits}/{interval} (schedule)")
+
+
+def determine_action(
+    active_key: Optional[str],
+    trigger: TriggerType,
+) -> tuple[SchedulerDecision, str]:
+    """决定本次是否允许。
+
+    显式区分「什么时候允许自动解除 BLOCKED」（见 _blocked_decision）：
+      - manual  → 立即放行（人工干预）
+      - schedule → 遵守 blocked_retry_interval 的 cooldown
+
+    Returns:
+        (decision, reason)
+    """
+    if not active_key:
+        return "NOOP", "No active course configured"
+
+    from state.course_state import load_course_state
+    state = load_course_state(active_key)
+    if not state:
+        return "NOOP", f"No state for active course {active_key}"
+
+    if state.status == "ARCHIVED":
+        return "NOOP", f"Course {active_key} is ARCHIVED"
+
+    # 读取 scheduler 熔断状态（在 BLOCKED 时会被改写并持久化）
+    ss = load_scheduler_state(active_key)
+
+    # 课程状态级 BLOCKED
+    if state.status == "BLOCKED":
+        return _blocked_decision(active_key, ss, trigger,
+                                 f"Course {active_key} is BLOCKED")
+
+    # 连续失败阈值级 BLOCKED（recent 连续失败 ≥ 3）
+    if ss.consecutive_failures >= 3:
+        return _blocked_decision(
+            active_key, ss, trigger,
+            f"Course {active_key} has {ss.consecutive_failures} consecutive failures")
+
+    # 非阻塞状态：复位 BLOCKED 熔断计数（一旦恢复正常即清零）
+    if ss.blocked_since or ss.blocked_hits:
+        ss.blocked_since = None
+        ss.blocked_hits = 0
+        save_scheduler_state(active_key, ss)
+
+    return "RUN", f"Active course {active_key} ready to run"
+
+
+def record_result(
+    course_key: str,
+    result: ExecutionResult,
+) -> None:
+    """记录执行结果并更新 scheduler 状态。"""
+    ss = load_scheduler_state(course_key)
+
+    ss.last_scheduled_at = result.timestamp_utc
+    ss.last_started_at = result.timestamp_utc
+    ss.last_finished_at = datetime.now(timezone.utc).isoformat()
+    ss.last_result = result.result
+    ss.last_run_id = result.run_id
+    ss.last_trigger = result.trigger
+    ss.execution_id = result.run_id
+    ss.attempt += 1
+
+    # 更新连续失败计数
+    # ENV_FAILED = 纯环境/会话级失败轮：不是任何一章的问题，不烧课程级失败预算。
+    if result.result == "FAILED":
+        ss.consecutive_failures += 1
+        # 连续失败 ≥ 阈值 → 进入 BLOCKED 熔断（by _blocked_decision 下次 schedule 生效）
+        if ss.consecutive_failures >= 3 and not ss.blocked_since:
+            ss.blocked_since = result.timestamp_utc or \
+                datetime.now(timezone.utc).isoformat()
+            ss.blocked_hits = 0
+    else:
+        ss.consecutive_failures = 0
+        # 恢复正常 → 清除 BLOCKED 熔断计数
+        ss.blocked_since = None
+        ss.blocked_hits = 0
+
+    save_scheduler_state(course_key, ss)
+
+
+def get_scheduler_summary(
+    active_key: Optional[str],
+    decision: SchedulerDecision,
+    reason: str,
+) -> dict:
+    """生成 Actions Summary 用的摘要。"""
+    summary = {
+        "trigger": "scheduled" if "schedule" in reason.lower() else "manual",
+        "decision": decision,
+        "reason": reason,
+        # GitHub Actions 仓库名（github.repository = "owner/repo"）；本地环境取不到时为 ""
+        "repo": os.environ.get("GITHUB_REPOSITORY", "") or "",
+    }
+    if active_key:
+        from state.course_state import load_course_state
+        state = load_course_state(active_key)
+        if state and state.course_identity:
+            summary["course"] = state.course_identity.title
+            summary["identity"] = active_key
+            summary["status"] = state.status
+            ss = load_scheduler_state(active_key)
+            summary["last_result"] = ss.last_result
+            summary["consecutive_failures"] = ss.consecutive_failures
+            summary["last_run_id"] = ss.last_run_id
+    return summary
+
+
+def generate_actions_summary(summary: dict) -> str:
+    """生成 GitHub Actions Summary Markdown。"""
+    lines = ["## Xuexitong Scheduler", ""]
+    lines.append(f"**Trigger**: {summary.get('trigger', '?')}")
+    lines.append(f"**Course**: {summary.get('course', 'N/A')}")
+    lines.append(f"**Identity**: `{summary.get('identity', 'N/A')}`")
+    lines.append(f"**Status**: {summary.get('status', '?')}")
+    lines.append(f"**Decision**: `{summary.get('decision', '?')}`")
+    lines.append(f"**Reason**: {summary.get('reason', '')}")
+    lines.append("")
+
+    if summary.get('last_result'):
+        lines.append(f"**Previous Run**: {summary['last_result']}")
+    repo = (summary.get('repo') or '').strip()
+    if summary.get('last_run_id'):
+        if repo:
+            lines.append(f"**Last Run ID**: [{summary['last_run_id']}]("
+                         f"https://github.com/{repo}/actions/runs/{summary['last_run_id']})")
+        else:
+            lines.append(f"**Last Run ID**: `{summary['last_run_id']}`")
+    if summary.get('consecutive_failures') is not None:
+        cf = summary['consecutive_failures']
+        lines.append(f"**Consecutive Failures**: {cf}"
+                     f"({'⚠️ BLOCKED threshold reached' if cf >= 3 else ''})")
+    lines.append("")
+
+    if summary.get('decision') == 'BLOCKED':
+        lines.append("> ⚠️ Scheduler blocked. Manual intervention required.")
+        lines.append("> Check course state and fix underlying issues.")
+    elif summary.get('decision') == 'NOOP':
+        lines.append("> ℹ️ No action taken. Check if course is initialized.")
+
+    return "\n".join(lines)
+
+
+# 便捷函数供 run.py 调用
+def _kill_proc_tree(pid: int) -> None:
+    """尽力杀进程树（含 Playwright 派生的 Chromium/child）。
+
+    调用方须用 `start_new_session=True` 启动子进程，使其成为独立进程组组长，
+    这样 killpg(pid, ...) 能连同其所有子进程（browser/page）一并清理。
+    GHA runner 是 Linux：先 SIGTERM（graceful），随后 SIGKILL 兜底。
+    Windows 无进程组语义：taskkill /T 连整棵进程树（含 Chromium 子进程）终止，
+    避免只杀主进程泄漏浏览器。仅 frozen/本地 Windows 分支受影响，Linux 路径不变。
+    """
+    if not pid:
+        return
+    if os.name == "nt":
+        import subprocess as _sp
+        try:
+            _r = _sp.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                         capture_output=True, timeout=15)
+            if _r.returncode == 0:
+                return
+        except Exception:
+            pass
+        try:
+            os.kill(pid, 9)
+        except Exception:
+            pass
+        return
+    import signal as _signal
+    import time as _t
+    try:
+        os.killpg(pid, _signal.SIGTERM)
+        _t.sleep(1)
+        try:
+            os.killpg(pid, _signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    except ProcessLookupError:
+        pass
+    except (AttributeError, OSError):
+        # 无 killpg 或组已消亡 → 直接 SIGKILL 该 pid
+        try:
+            os.kill(pid, 9)
+        except Exception:
+            pass
+
+
+def _archive_existing(path) -> "Optional[str]":
+    """已有同名产物先改名留档，绝不就地覆盖。
+
+    产物按 task_id 命名，所以**同一章被重投时上一轮证据会被抹掉**：第 3 轮 M0 里
+    run1 的 708 播了 465s，run3 重投后那份日志只剩最后 5 个采样，我先前据 run1
+    日志下的结论因此不可复现 —— 与"证据可复现"直接冲突。
+    """
+    p = Path(path)
+    if not p.exists():
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archived = p.with_name(f"{p.stem}.{stamp}{p.suffix}")
+    n = 1
+    while archived.exists():
+        archived = p.with_name(f"{p.stem}.{stamp}-{n}{p.suffix}")
+        n += 1
+    p.rename(archived)
+    return str(archived)
+
+
+def artifact_slug(task_id: str) -> str:
+    """产物文件名里代表 task_id 的那一段。
+
+    点级 task_id 形如 `1217304708:video2`，而 Windows 把 `name:stream` 解释成
+    **NTFS 备用数据流**：`./evidence/chapter_1217304708:video2.json` 不报错，内容
+    被写进同章 `<cid>` 那个 0 字节空壳的隐藏流里（`dir /r` 才看得见），归档因此
+    归档空壳。Linux runner 上 `:` 是合法字符 —— 路径正常，属又一处本地/云不对称。
+    """
+    return (task_id or "").replace(":", "_")
+
+
+def _crash_truth_heal(course_key: str, task_id: str, course_url: str,
+                      run_id: str) -> bool:
+    """A2：崩溃 ≠ 播放失败 —— 用点级真源判断「崩溃前是否已经学完」。
+
+    实测 3 次 TargetClosedError（浏览器窗口被外部关闭）都发生在播放 90%+ 之后：
+    子进程崩溃导致 evidence 没写完，但服务端可能已把该点判 finished。此时盲目
+    重跑（站点不为已过的点起流，重跑必然等 metadata 超时）或整轮终止，都会把
+    一次几乎完成的学习浪费掉，还要等下一轮探测才能找回状态。
+
+    做法：在把 CRASH 归为环境类失败**之前**，用 live_verify_chapter（独立开
+    浏览器登录读点级）复核一次 —— 目标点已被服务端判 finished → 以
+    SERVER_VERIFIED 落账本并返回 True（调用方按 PASS 继续推进）。复核异常或
+    未通过 → 返回 False，走原有 ENV 处理。纯通用逻辑：任何崩溃场景、任何
+    章节、任何点都走同一条真源判据，不针对特定错误串或用例。
+
+    预算：单进程最多 heal 2 次 —— 防止环境真坏了时每章都开一次浏览器复核。
+    """
+    _budget = getattr(_crash_truth_heal, "_budget", 2)
+    if _budget <= 0:
+        print("[scheduler] A2 crash-truth heal 预算用尽，本轮不再复核",
+              flush=True)
+        return False
+    if not task_id:
+        return False
+    from resolvers.course_resolver import _parse_url_params
+    from app.registry.task_registry import load_registry, save_registry
+    from tvdp.tdvp import live_verify_chapter
+
+    cid = task_id.split(":", 1)[0]
+    _crash_truth_heal._budget = _budget - 1
+    try:
+        params = _parse_url_params(course_url)
+        verify = live_verify_chapter(
+            cid,
+            params.get("course_id", ""), params.get("clazz_id", ""),
+            params.get("cpi", ""),
+            os.environ.get("CX_USER", ""), os.environ.get("CX_PASS", ""),
+            enc=params.get("enc", ""))
+    except Exception as e:
+        print(f"[scheduler] A2 crash-truth 复核异常（按未通过处理）: "
+              f"{type(e).__name__}: {e}", flush=True)
+        return False
+    finished = (verify or {}).get("live_finished") or set()
+    if task_id not in finished:
+        print(f"[scheduler] A2 crash-truth: {task_id} 服务端未判 finished "
+              f"（live_finished={sorted(finished) or '空'}）→ 按环境类失败处理",
+              flush=True)
+        return False
+    reg = load_registry(course_key)
+    rec = reg.get(task_id)
+    if rec is None:
+        return False
+    if rec.point_is_server_verified():
+        return True                      # 已有强证据，无需改写，按 PASS 继续
+    rec.mark_completed(
+        run_id=run_id, evidence_level="SERVER_VERIFIED",
+        source="live job points (post-crash truth heal)",
+        detail="crash 后点级复核：服务端已判该点 finished")
+    save_registry(course_key, reg)
+    print(f"[scheduler] A2 crash-truth heal: {task_id} 服务端已判 finished "
+          f"→ SERVER_VERIFIED 落账，本轮按 PASS 继续推进", flush=True)
+    return True
+
+
+def _run_one_chapter(course_url: str, chapter_id: str, task_id: str = "",
+                     trigger: TriggerType = "manual", run_id: str = "",
+                     video_index: int = 0, max_s: int = 900) -> dict:
+    """隔离执行单章学习（subprocess + wall-clock 超时），返回聚合结果 dict。
+
+    设计动机（见事故 run 34311891898）：cmd_run → run_test 的 Playwright 播放
+    循环在「nextUnit 切换但已记录 passed_object_id」等状态下可能**永不退出**。
+    若在同一主线程内同步调用，外层 Python 循环即使有 budget 也拦不住一次
+    cmd_run 内部的永久阻塞（browser 还活着）。因此：
+
+      * 把每次 cmd_run 放进独立**子进程**（app.run --action run）。
+      * 用分片 `subprocess.wait(timeout=...)` 提供**墙钟硬上限**；每片之间回读
+        子进程日志，读到它自己播报的视频时长就把预算按 `_adaptive_video_watch_s`
+        扩一次（时长只能在这儿拿到 —— 父进程侧的探测跑在起播之前）。
+      * 超时 → 杀进程树（不再可能泄漏 Chromium）→ 标记 TIMEOUT（区别于 FAIL）。
+
+    返回:
+      {
+        "passed": bool,
+        "verdict": str,            # PASS / FAIL / TIMEOUT
+        "runtime_evidence": dict,
+        "failure_stage": str | None,
+        "exit_code": int,          # 0 成功；非 0 失败/崩溃；124=本 watchdog 超时
+        "timing_s": float,
+        "timed_out": bool,
+      }
+    """
+    import time
+    import json as json_mod
+    import subprocess as sp
+
+    _slug = artifact_slug(task_id or chapter_id)
+    evidence_path = f"./evidence/chapter_{_slug}.json"
+    stdout_path = f"./evidence/chapter_{_slug}.scheduler.stdout.log"
+    try:
+        Path(stdout_path).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    # 重投同一章时先归档上一轮产物 —— 就地覆盖等于销毁自己的证据
+    for _prev in (evidence_path, stdout_path):
+        _arch = _archive_existing(_prev)
+        if _arch:
+            print(f"[scheduler] 上一轮产物归档: {_arch}", flush=True)
+
+    # 章视角对齐：用任务自己的 chapter_id 重建课程 URL，避免沿用 state 里
+    # 旧章 raw_url 的 chapterId 锚点（否则 page 落到的章节视图与任务不对齐）。
+    spawn_url = _align_chapter_url(course_url, chapter_id)
+    if getattr(sys, "frozen", False):
+        # 冻结产物：sys.executable 是本 exe 而非 Python 解释器，`-m app.run` 不成立；
+        # 直接以 CLI 语义重入（exe 的 main() 会自行 chdir 到 exe 旁，./evidence
+        # 产物落点与源码形态一致）。源码形态（含 GHA）保持原样。
+        cmd = [sys.executable]
+    else:
+        cmd = [sys.executable, "-m", "app.run"]
+    cmd += [
+        "--action", "run",
+        "--course-url", spawn_url,
+        "--chapter-id", chapter_id,
+        "--output", evidence_path,
+        "--xvfb-display", os.environ.get("DISPLAY", ":99"),
+        "--max-attempts", "2",
+        "--video-index", str(int(video_index or 0)),
+    ]
+    t0 = time.time()
+    exit_code = 1
+    timed_out = False
+    budget_s = int(max_s)
+    # frozen 子进程重入同一 exe：注入 XUE_NO_EXIT_PAUSE，让 __main__ 的
+    # 双击停窗守卫跳过 input——否则子进程播完后卡在等回车，被看门狗当
+    # 超时收割（实测 PASS 被误标 FAILED，污染 consecutive_failures）。
+    child_env = dict(os.environ, XUE_NO_EXIT_PAUSE="1")
+    # 看门狗轮询片长：够短（能在子进程播报后十几秒内扩预算），又不至于把日志
+    # 读成热路径。真正的判定权在 deadline，不在这个数。
+    watch_tick_s = 15.0
+    stdout_fh = open(stdout_path, "w", encoding="utf-8", errors="replace")
+    try:
+        try:
+            proc = sp.Popen(cmd, stdout=stdout_fh, stderr=sp.STDOUT,
+                        env=child_env,
+                        start_new_session=True)  # 独立进程组 → killpg 可连 browser 一并清理
+            # 墙钟预算改成分片轮询：只有轮询才能在子进程还活着时读到它自己
+            # 播报的视频时长，把静态 base 扩成自适应预算（R5/#20 —— 父进程
+            # 侧的时长探测跑在起播之前，结构上永远读不到 duration）。
+            # 每片重读整份日志：解析器不认半行，所以截断无副作用，
+            # 下一片会读到这行的完整内容。
+            deadline = t0 + budget_s
+            extended = False
+            while True:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise sp.TimeoutExpired(cmd, budget_s)
+                try:
+                    exit_code = proc.wait(timeout=min(watch_tick_s, remaining))
+                    break
+                except sp.TimeoutExpired:
+                    pass
+                if extended:
+                    continue
+                try:
+                    with open(stdout_path, encoding="utf-8",
+                              errors="replace") as _logf:
+                        _child_log = _logf.read()
+                except Exception:
+                    _child_log = ""
+                dur = child_reported_duration(_child_log)
+                if not dur:
+                    continue
+                new_budget = _adaptive_video_watch_s(budget_s, dur)
+                if new_budget <= budget_s:
+                    continue
+                budget_s = new_budget
+                deadline = t0 + budget_s
+                extended = True
+                print(f"[scheduler] chapter {chapter_id} watchdog extended: "
+                      f"child reported duration={dur:.0f}s -> budget "
+                      f"{int(max_s)}s -> {budget_s}s", flush=True)
+        except sp.TimeoutExpired:
+            timed_out = True
+            print(f"[scheduler] chapter {chapter_id} exceeded {budget_s}s "
+                  f"(watchdog), killing pid {proc.pid}", flush=True)
+            _kill_proc_tree(proc.pid)
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                pass
+            exit_code = 124  # watchdog 超时 exit（与 GNU timeout 一致）
+    except Exception as e:
+        print(f"[scheduler] chapter {chapter_id} subprocess error: "
+              f"{type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        exit_code = 1
+    finally:
+        try:
+            stdout_fh.close()
+        except Exception:
+            pass
+    timed = time.time() - t0
+
+    passed = (not timed_out) and (exit_code == 0)
+    verdict = "TIMEOUT" if timed_out else ("PASS" if passed else "FAIL")
+
+    # 读取运行生成的 evidence / failure_stage
+    runtime_evidence = None
+    failure_stage = None
+    try:
+        if Path(evidence_path).exists():
+            with open(evidence_path, encoding="utf-8") as f:
+                r = json_mod.load(f)
+            res = r.get("result", {})
+            if res.get("verdict", ""):
+                verdict = res.get("verdict", verdict)
+            if not timed_out:
+                passed = res.get("exit_code", 1) == 0
+            else:
+                # 超时被杀 ≠ 播放失败：子进程可能在收尾阶段挂住（如等待交互输入）
+                # 被看门狗收割，但 evidence 是它被杀前写下的——verdict=PASS 意味着
+                # 服务端已确认 isPassed、registry 已标 SERVER_VERIFIED。此时仍判
+                # 失败会污染 consecutive_failures（3 集长视频 → 课程级 BLOCKED）。
+                passed = str(res.get("verdict", "") or "") == "PASS"
+            runtime_evidence = r.get("evidence") or {}
+            failure_stage = runtime_evidence.get("failure_stage") \
+                if isinstance(runtime_evidence, dict) else None
+            # 子进程崩溃没有 failure_stage（run.py 的 CRASH evidence 无此字段）——
+            # 显式补上，failure_class_policy 才能把它归入 ENV 而非章节失败。
+            if not failure_stage and (res.get("crash")
+                                      or (runtime_evidence or {}).get("verdict") == "CRASH"):
+                failure_stage = "CRASH"
+    except Exception as e:
+        # 必须出声：D5 的归因丢失能活过三轮验证，就是因为这里静默吞掉了读取异常。
+        print(f"[scheduler] {Path(evidence_path).name} 产物读取失败，"
+              f"本轮 verdict 退回退出码结论: {type(e).__name__}: {e}", flush=True)
+
+    # 非 PASS 却没有失败段 → 显式说明"运行期没交回归因"，别留 null 让汇总
+    # 看起来像已经归因过（run2/run3 的 708 就是这样：FAIL + failure_stage=null）。
+    # TIMEOUT 除外：它本身就是精确的失败段。
+    if verdict not in ("PASS", "TIMEOUT", "") and not failure_stage:
+        failure_stage = "UNREPORTED_BY_RUNTIME"
+
+    print(f"[scheduler] chapter {chapter_id}: verdict={verdict} "
+          f"timing_s={round(timed,1)} exit_code={exit_code} "
+          f"timed_out={timed_out}", flush=True)
+    return {
+        "passed": passed, "verdict": verdict,
+        "runtime_evidence": runtime_evidence,
+        "failure_stage": failure_stage, "exit_code": exit_code,
+        "timing_s": timed, "timed_out": timed_out,
+    }
+
+
+def run_scheduler(course_url: Optional[str] = None, chapter_id: str = "",
+                  trigger: TriggerType = "manual", run_id: str = "local",
+                  max_chapters: int = 1) -> ExecutionResult:
+    """Scheduler 入口：从 state/active_course.json 读取课程，内置 TDVP 探测 + 多章执行。
+
+    - 手动触发（workflow_dispatch）：可选传 course_url，用于切换课程
+    - 定时触发（schedule）：course_url 为 None，完全从 state 读取
+    - TDVP Passive Probe 在后台静默执行，不暴露给用户
+    - max_chapters：一次调度最多自动推进多个视频任务点（默认 1）
+    """
+    import time
+    import os as _os
+
+    # ── 多章参数收敛 ──────────────────────────────────────────────
+    try:
+        max_chapters = max(1, int(max_chapters))
+    except (TypeError, ValueError):
+        max_chapters = 1
+    try:
+        budget_s = int(_os.environ.get("XUE_SCHEDULER_BUDGET_S", "1500"))
+    except Exception:
+        budget_s = 1500
+    try:
+        failure_budget = max(1, int(_os.environ.get(
+            "XUE_SCHEDULER_FAILURE_BUDGET", "1")))
+    except Exception:
+        failure_budget = 1
+    # 单章执行器（cmd_run 子进程）的 wall-clock 硬上限；超时按 TIMEOUT 处理并杀进程树。
+    try:
+        chapter_max_s = max(60, int(_os.environ.get("XUE_CHAPTER_MAX_S", "900")))
+    except Exception:
+        chapter_max_s = 900
+
+    from resolvers.course_resolver import resolve_course, detect_course_change
+    from state.course_state import load_active_course, load_course_state, activate_course
+
+    # ── Step 1: 确定课程 identity ────────────────────────────────
+    active = load_active_course()
+
+    if course_url:
+        # 手动触发：解析传入的 URL
+        result = resolve_course(course_url)
+        if not result.is_ok():
+            return ExecutionResult(
+                decision="ERROR", result="FAILED", trigger=trigger,
+                course_key="", run_id=run_id, timing_s=0,
+                passed=False, verdict=f"Resolve failed: {result.error}",
+                error=result.error,
+            )
+        identity_key = result.identity.key()
+
+        # 检测是否需要切换
+        if active and active.key() != identity_key:
+            det = detect_course_change(course_url, active)
+            if det.kind in ("COURSE_CHANGED", "NEW_COURSE"):
+                from resolvers.course_resolver import CourseIdentity as SCI
+                new_id = SCI(
+                    course_id=result.identity.course_id,
+                    clazz_id=result.identity.clazz_id,
+                    cpi=result.identity.cpi,
+                    title=result.identity.title,
+                    raw_url=course_url,
+                    resolved_at_utc=result.identity.resolved_at_utc,
+                )
+                activate_course(new_id)
+                # 同步 TDVP 状态
+                sync_tdvp_on_switch(new_id, course_url)
+    else:
+        # 定时触发：从 state 读取
+        if not active:
+            return ExecutionResult(
+                decision="NOOP", result="NOOP", trigger=trigger,
+                course_key="", run_id=run_id, timing_s=0,
+                passed=False, verdict="No active course configured (run initialize first)",
+            )
+        identity_key = active.key()
+        course_url = active.raw_url  # 使用 state 中保存的 URL
+
+    # ── 窗口跨轮记忆：深读窗口跳过「点级快照已证明无视频工作」的章 ──────
+    # 无视频章（测验/文档/已看完）不再永久占槽，Top-K 窗口才能真正前移。
+    from tvdp.tdvp import set_window_skipper
+    set_window_skipper(_make_no_video_work_skipper(identity_key))
+
+    # ── Step 1.5: 账号首次进入课程 → 服务端真源 bootstrap（P0-3，幂等）──────
+    # 该账号命名空间里此课程 registry 为空（首次进）时，用服务端 catalog 一次性
+    # 材料化 work 列表并写 progress（服务端完成数），避免"空账 → 探针无 pending →
+    # NOOP"的鸡生蛋困境。registry 已非空则内部 NOOP，不打服务器、不覆盖。
+    _ensure_bootstrap_on_start(course_url, identity_key, run_id)
+
+    # ── Step 2: 决定 action（含 BLOCKED cooldown/retry）──────────
+    decision, reason = determine_action(identity_key, trigger)
+
+    if decision != "RUN":
+        summary = get_scheduler_summary(identity_key, decision, reason)
+        _write_summary(summary)
+        _try_sync_progress(identity_key)  # 3D/P1-12: 任何结束都刷新本地进度账，避免恒 0
+        return ExecutionResult(
+            decision=decision, result="NOOP" if decision == "NOOP" else "BLOCKED",
+            trigger=trigger, course_key=identity_key, run_id=run_id,
+            timing_s=0, passed=False, verdict=reason,
+        )
+
+    # ── Step 2.5: BLOCKED cooldown 复位点只给最小推进（1 章）────────
+    if "cooldown expired" in reason:
+        max_chapters = 1
+
+    # ── Step 2.7: 人工显式恢复（2026-09-22 用户定案）────────────────
+    # 课程级 manual override 在 determine_action 里；任务级冻结原先没有合法出口：
+    # 被冻的 `:videoN`（如 1217304738:video2，cf=3）往往正是章内剩余工作量的唯一
+    # 承载者（见 has_unfinished_video_sibling），既进不了队列又永远等不到治愈事件，
+    # 只剩手改账本一条路。manual = 人工主动干预 → 解冻回 PENDING，让它去挣一次真实成功。
+    # schedule 腿不走这里：夜巡不自行放宽熔断，只有服务端真源恢复那条路。
+    if trigger == "manual":
+        from app.registry.reconcile import restore_blocked_for_manual
+        from app.registry.task_registry import load_registry, save_registry
+        _reg = load_registry(identity_key)
+        _restored = restore_blocked_for_manual(
+            _reg, only_chapter=(chapter_id.split(":")[0] if chapter_id else None))
+        if _restored:
+            save_registry(identity_key, _reg)
+            print(f"[scheduler] TDVP: manual_restore={len(_restored)} "
+                  f"tasks={sorted(_restored)}", flush=True)
+
+    # ── Step 3: 多章循环执行 ─────────────────────────────────────
+    t0 = time.time()
+    chapters_attempted: list[str] = []
+    chapters_failed: list[str] = []
+    last_verdict = "NOOP"
+    last_failure_stage = None
+    runtime_evidence = None
+
+    # 首次探测：无显式 chapter_id 时自动选下一个 pending 任务。
+    print("[状态] PREPARE 探测候选中(目录扫描+点级验证)…", flush=True)
+    next_task = chapter_id or _run_tdvp_probe(course_url, identity_key,
+                                              run_id=run_id)
+    if not next_task:
+        # 无显式章 + 自动探测未给出 → 要么确实无 pending，要么探针空(PROBE_EMPTY)。
+        # 由 _run_tdv_probe 内部已打 PROBE_EMPTY 提示；这里不臆测选章，诚实报 NOOP。
+        summary = get_scheduler_summary(identity_key, "NOOP",
+                                        "No pending task / probe empty")
+        _write_summary(summary)
+        _try_sync_progress(identity_key)  # 3D/P1-12
+        return ExecutionResult(
+            decision="NOOP", result="NOOP", trigger=trigger,
+            course_key=identity_key, run_id=run_id, timing_s=0,
+            passed=False, verdict="No pending task / probe empty (no guess)",
+        )
+
+    consecutive_fail_in_run = 0
+    executed = 0
+    chapters_timed_out: list = []
+    chapters_corrected: list = []      # 本轮按页面实测纠正掉账本错的章（§4.13）
+    chapters_env_failed: list = []     # 本轮环境/会话级失败的章（不计章节失败）
+    while executed < max_chapters:
+        if time.time() - t0 > budget_s:
+            print(f"[scheduler] budget exceeded ({budget_s}s), "
+                  f"stopping after {executed} chapters", flush=True)
+            break
+        if not next_task:
+            break
+
+        # Options B：把选中的 task（<cid> 或 <cid>:videoN）解析成 (chapter, video_index)
+        run_cid, run_vidx = _split_video_target(next_task)
+        # BLOCKED 跳过的运行时护栏：任务已 BLOCKED / 连续失败达上限（max_attempts）
+        # 则不再重跑，直接换下一候选（reconcile_queue 已排除 BLOCKED，但某章可能
+        # 在本轮中途才跨过阈值，这里显式兜底，避免把 budget 打在注定失败的重放上）。
+        if _task_is_blocked(identity_key, next_task, run_cid):
+            print(f"[scheduler] skip blocked/cap-reached task {next_task} "
+                  f"(chapter {run_cid}); pick next", flush=True)
+            chapters_attempted.append(next_task)
+            if executed < max_chapters:
+                next_task = _run_tdvp_probe(
+                    course_url, identity_key, run_id=run_id,
+                    exclude_chapters=set(chapters_attempted))
+            else:
+                next_task = None
+            continue
+        chapters_attempted.append(next_task)
+        # 自适应看门狗：长视频按实际时长展开 per-chapter 预算（避免 838s 视频被
+        # 900s 静态墙钟在 play ~46% 时误杀成 TIMEOUT）。
+        # 父进程侧时长探测已下线（2026-10-06）：它跑在起播之前，页面上没有激活
+        # 的播放器，真站两个 run 实证只读得到 None（见 child_reported_duration），
+        # 却让每轮调度多开一次浏览器+登录+25-45s 轮询 —— 用户眼里的第 2 个
+        # "Chrome 开了又关"。预算按 base 起步，子进程 "Video ready" 播报后自适应
+        # 扩（deadline 重基线，已流逝时间不损失）；XUE_VIDEO_DURATION_S 仍可覆盖。
+        dur, dur_err = _env_video_duration()
+        if dur is not None:
+            watch_s, watch_reason = video_watch_budget(chapter_max_s, dur, dur_err)
+            if watch_reason.startswith("fallback"):
+                print(f"[scheduler] ⚠️ 看门狗降级 chapter={run_cid} {watch_reason}",
+                      flush=True)
+        else:
+            watch_s = chapter_max_s
+            watch_reason = "base: 无预读时长;子进程播报后自适应扩(重基线)"
+        print(f"[状态] PLAYING {next_task} "
+              f"[{executed + 1}/{max_chapters}] 预算 {watch_s}s", flush=True)
+        one = _run_one_chapter(course_url, run_cid, task_id=next_task,
+                               trigger=trigger, run_id=run_id,
+                               video_index=run_vidx, max_s=watch_s)
+        passed = one["passed"]
+        verdict = one["verdict"]
+        rt_ev = one["runtime_evidence"]
+        fail_stage = one["failure_stage"]
+        timed_out = one["timed_out"]
+        from app.registry.reconcile import (phantom_correction_policy,
+                                            failure_class_policy)
+        phantom = phantom_correction_policy(
+            fail_stage,
+            video_index=(rt_ev or {}).get("target_video_index"),
+            observed_points=(rt_ev or {}).get("video_points_observed"))
+        executed += 1
+        last_verdict = verdict
+        runtime_evidence = runtime_evidence or rt_ev
+        if fail_stage:
+            last_failure_stage = fail_stage
+        if timed_out:
+            chapters_timed_out.append(next_task)
+
+        if passed:
+            consecutive_fail_in_run = 0
+        elif phantom is not None:
+            # 幻影 `:videoN`（§4.13）：页面上没有这么多个点，子进程已按实测把账本与
+            # 点级快照纠正掉。这**不是播放失败**，所以既不计本轮连续失败预算、也不计入
+            # chapters_failed —— 否则整轮判 FAILED，workflow 的 state 提交步（`success()`）
+            # 直接跳过，纠正落不回仓库，幻影明晚照旧再来一次。
+            chapters_corrected.append(next_task)
+            print(f"[scheduler] PHANTOM-CORRECTED {next_task}: page has {phantom} "
+                  f"video point(s) -> ledger/snapshot repaired, not counted as a "
+                  f"playback failure", flush=True)
+        elif timed_out:
+            # TIMEOUT：执行器未能可靠终止。记为失败（计入 chapters_failed，供
+            # 聚合结果用），但不计入「连续失败熔断 budget」——避免单个 watchdog
+            # 超时把整轮多章 run 熔断得"连下一章也不跑"，继续推进下一章。
+            chapters_failed.append(next_task)
+        elif (fail_stage == "CRASH"
+              and _crash_truth_heal(identity_key, next_task, course_url,
+                                    run_id)):
+            # A2：崩溃后点级真源复核显示目标点已被服务端判 finished（典型场景：
+            # 播放 90%+ 后浏览器窗口被外部关闭）→ 本次投递实质成功。按 PASS
+            # 处理：重置连续失败计数，继续推进后续章节；不强投、不重跑。
+            consecutive_fail_in_run = 0
+        elif failure_class_policy(fail_stage, verdict) == "ENV":
+            # 环境/会话级失败（登录/被踢/页面框架/崩溃）：不是这一章的问题，
+            # 烧章节失败预算只会把一个系统级故障伪装成整门课逐章 BLOCKED。
+            # 终止本轮，走调度器级熔断（decision=ERROR → loop 30 分钟退避，
+            # 连续 5 轮退出）；任务保持原状，环境恢复后自然重试。
+            chapters_env_failed.append(next_task)
+            print(f"[scheduler] ⛔ 环境类失败 {next_task} "
+                  f"(stage={fail_stage or '?'})，不计入章节失败；"
+                  "本轮终止，等待环境恢复", flush=True)
+            break
+        else:
+            chapters_failed.append(next_task)
+            consecutive_fail_in_run += 1
+            # 连续失败达到 budget → 熔断本轮，不再跑剩余章。
+            if consecutive_fail_in_run >= failure_budget:
+                print(f"[scheduler] {consecutive_fail_in_run} consecutive "
+                      f"failure(s) this run (budget {failure_budget}); "
+                      "stopping multi-chapter loop", flush=True)
+                break
+
+        # 跑完一段后重新探测下一任务（registry 已更新）。
+        # 按 task_id 排除本轮已处理过的——允许同一章的下一个视频段被接着选中。
+        if executed < max_chapters:
+            print("[状态] PREPARE 探测下一候选中…", flush=True)
+            next_task = _run_tdvp_probe(
+                course_url, identity_key, run_id=run_id,
+                exclude_chapters=set(chapters_attempted))
+        else:
+            next_task = None
+
+    timing = time.time() - t0
+
+    # 汇总（P0-06）：不得用「任一章成功」归一成全局 SUCCESS 掩盖真实失败。
+    #   * real_failures：非 TIMEOUT 的真实失败章（TIMEOUT 由 watchdog 单独记账，见下）。
+    #   * successful：本次真正推进成功的章（不在 chapters_failed / chapters_env_failed 中）。
+    # 规则：
+    #   - 有真实失败 → 全局 FAILED（不归一 SUCCESS，也不让 record_result 清零失败 budget）
+    #   - 有成功章 → SUCCESS（含零星 TIMEOUT / 环境失败）
+    #   - 全是环境/会话失败 → ENV_FAILED（不烧课程级失败预算，decision 升为 ERROR 退避）
+    #   - 其余（全超时/全失败且无成功）→ FAILED
+    real_failures = [c for c in chapters_failed if c not in chapters_timed_out]
+    successful = [c for c in chapters_attempted
+                  if c not in chapters_failed and c not in chapters_env_failed]
+    if real_failures:
+        agg_result = "FAILED"
+        agg_passed = False
+    elif successful:
+        agg_result = "SUCCESS"
+        agg_passed = True
+    elif chapters_env_failed:
+        agg_result = "ENV_FAILED"
+        agg_passed = False
+    else:
+        agg_result = "FAILED"
+        agg_passed = False
+
+    exec_result = ExecutionResult(
+        decision="RUN",
+        result=agg_result,
+        trigger=trigger,
+        course_key=identity_key,
+        run_id=run_id,
+        timing_s=round(timing, 1),
+        passed=agg_passed,
+        verdict=last_verdict,
+        failure_stage=last_failure_stage,
+        evidence=runtime_evidence,
+    )
+    # 汇总补充字段（供 CI / 摘要）
+    exec_result.chapters_attempted = chapters_attempted
+    exec_result.chapters_failed = chapters_failed
+    exec_result.chapters_timed_out = chapters_timed_out
+    exec_result.chapters_corrected = chapters_corrected
+    exec_result.chapters_env_failed = chapters_env_failed
+
+    # 记录结果（aggregate 后 commit 一次）
+    record_result(identity_key, exec_result)
+
+    # 环境熔断：record 已按聚合结果落账（ENV_FAILED 不计课程级 cf），
+    # 这里再把 decision 升为 ERROR —— loop 对 ERROR 轮用 30 分钟长间隔退避，
+    # 连续 5 轮 ERROR 自动退出，避免环境坏掉后还每 2 分钟打扰服务端。
+    if chapters_env_failed:
+        exec_result.decision = "ERROR"
+        exec_result.error = (f"环境/会话类失败 x{len(chapters_env_failed)} "
+                             f"({', '.join(chapters_env_failed)}; "
+                             f"stage={last_failure_stage or '?'})")
+
+    # 3D / P1-12：把「已完成章」同步进 course_state.progress（由 registry 派生，单一真源）。
+    _try_sync_progress(identity_key)
+
+    # 生成 summary
+    summary = get_scheduler_summary(identity_key, "RUN", "Executing course task")
+    summary["result"] = exec_result.result
+    summary["timing_s"] = exec_result.timing_s
+    summary["verdict"] = exec_result.verdict
+    summary["chapters_attempted"] = chapters_attempted
+    summary["chapters_failed"] = chapters_failed
+    summary["chapters_timed_out"] = chapters_timed_out
+    summary["chapters_corrected"] = chapters_corrected
+    summary["chapters_env_failed"] = chapters_env_failed
+    _write_summary(summary)
+
+    return exec_result
+
+
+def _write_summary(summary: dict) -> None:
+    """将 summary 写入 Actions summary 文件。"""
+    try:
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
+        if summary_path:
+            md = generate_actions_summary(summary)
+            Path(summary_path).write_text(md, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _sync_progress_from_registry(course_key: str) -> None:
+    """3D / P1-12：由 task registry 派生并写回 `course_state.progress.completed`。
+
+    single source of truth：`progress.completed` = 已完成章节数（`done_chapter_ids_from_registry`），
+    `total` = registry 里出现过的章节数。这是修复历史「runtime 从不写 `.completed`」的会计断：
+    运行后 `completed` 能反映本地账（0→N），而不是恒 0。
+
+    只对「本地账」负责；服务器是否真接受由 TDVP 探针独立判定（见 PROGRESS_OUTCOME_DATAFLOW.md）。
+    """
+    from app.registry.task_registry import load_registry, done_chapter_ids_from_registry
+    from state.course_state import load_course_state, save_course_state, CourseProgress
+
+    registry = load_registry(course_key)
+    if not registry:
+        return  # 无 registry 时不推进（无信息）
+
+    done_ids = done_chapter_ids_from_registry(registry)
+    chapters = {t.chapter_id for t in registry.values() if t.chapter_id}
+
+    state = load_course_state(course_key)
+    if state is None:
+        return
+    if state.progress is None:
+        state.progress = CourseProgress(completed=len(done_ids), total=len(chapters))
+    else:
+        # 直接写回 registry 派生的真值；不额外 clamp（done 集合只随 reconcile 演进）。
+        state.progress.completed = len(done_ids)
+        if state.progress.total is None:
+            state.progress.total = len(chapters)
+    save_course_state(state)
+
+
+def _try_sync_progress(course_key: str) -> None:
+    """调用进度同步且不因同步失败影响主流程（会计失败只记日志，不抛）。"""
+    try:
+        _sync_progress_from_registry(course_key)
+    except Exception as _sync_err:
+        print(f"[scheduler] progress sync skipped: {_sync_err}", file=sys.stderr)
+
+
+# 进程内缓存：本轮 bootstrap 刚抓实网 fetch 的 combined，供紧随其后的
+# `_run_tdvp_probe` 复用——避免「首轮 bootstrap 一次登录 + probe 又一次登录」
+# 造成超星同账号并发登录互相踢会话。key=course_key；probe 消费后即清除。
+_PROBE_FETCH_CACHE: dict[str, dict] = {}
+
+
+def _ensure_bootstrap_on_start(course_url: str, identity_key: str,
+                               run_id: str) -> None:
+    """账号首次进入课程时，调度开始前材料化课表（P0-3），且**只开一次**浏览器。
+
+    - 触发：该账号命名空间（有 CX_USER）里本课程 registry 为空/不存在 → 从服务端
+      catalog 材料化 work 列表并写 `progress.completed`（服务端完成落实情况）。
+      这是「空表 → 探针 NOOP」鸡生蛋困境的解法。
+    - **只开一次**：把本次抓取的响应存进 `_PROBE_FETCH_CACHE`，随后 `_run_tdvp_probe`
+      直接复用（它本就依赖同一分根据 reconcile/选章），不二次登录、不会冲撞会话。
+    - 幂等：registry 已非空 → 内部 NOOP，不覆盖、不重新抓（实际二次 run 已验证=NOOP）。
+    - 异常只告日志，不阻碍本轮回调度主流程（下轮再试）。
+    """
+    import os as _os
+    _cx = _os.environ.get("CX_USER")
+    if not _cx:
+        return  # 无账号：account 命名空间不存在，维持原离线/legacy 路径
+    try:
+        from app.registry.task_registry import load_registry
+        # P0-2 继承先于 bootstrap 材料化：legacy 账已有 video 时直接并入 account 命名空间，
+        # 让本轮及后续 round 都从「真实工作历史」出发；bootstrap 的幂等护栏（registry
+        # 非空 → NOOP）会因此不再误触发，退化账死循环被打破（issue #4 第六层卡点）。
+        from app.registry.bootstrap import inherit_from_legacy
+        rep = inherit_from_legacy(identity_key)
+        if rep.mode != "noop":
+            print(f"[scheduler] P0-2 inherit: mode={rep.mode} status={rep.status} "
+                  f"legacy_tasks={rep.legacy_tasks} inherited={rep.inherited} "
+                  f"total_tasks={rep.total_tasks} reason={rep.reason}", flush=True)
+        if load_registry(identity_key):          # 非空 → 幂等 NOOP
+            return
+        from tvdp.tdvp import fetch_course_detail_and_verify
+        from resolvers.course_resolver import _parse_url_params
+        from app.registry.bootstrap import materialize_from_common
+        _p = _parse_url_params(course_url)
+        _tgt = _p.get("chapter_id") or ""        # 与 `_run_tdvp_probe` 首轮默认对齐
+        combined = fetch_course_detail_and_verify(
+            course_url, _tgt, cx_user=_cx,
+            cx_pass=_os.environ.get("CX_PASS"))
+        if not combined:
+            print("[scheduler] P0-3 bootstrap: fetch returned None; skip", flush=True)
+            return
+        _mark_no_video_work_snapshots(identity_key, combined)
+        _PROBE_FETCH_CACHE[identity_key] = combined  # 本轮 probe 复用，免二次登录
+        rep = materialize_from_common(identity_key, course_url, combined,
+                                      persist_progress=True)
+        print(f"[scheduler] P0-3 bootstrap: mode={rep.mode} status={rep.status} "
+              f"server_completed={rep.server_completed} tasks={rep.total_tasks} "
+              f"reason={rep.reason}", flush=True)
+    except Exception as _bse:
+        print(f"[scheduler] bootstrap skipped: {_bse}", file=sys.stderr)
+
+
+def head_chapter_id(head: Optional[dict],
+                    registry: dict,
+                    tasks: list) -> str:
+    """队列首项对应的章号（纯数字串），取不到则 ""。
+
+    队首 item 自带 chapter_id；只有它为空时才回退查 registry / discovery 列表，
+    且回退必须取 `.chapter_id` —— `str(existing[tid])` 会得到整条 TaskRecord repr，
+    那个 repr 曾被当作 knowledge_id 传给 live 复核（见测试文件说明）。
+    """
+    tid = str((head or {}).get("task_id", "") or "")
+    for cand in (
+        (head or {}).get("chapter_id"),
+        getattr(registry.get(tid), "chapter_id", None),
+        next((getattr(t, "chapter_id", "") for t in tasks
+              if getattr(t, "task_id", "") == tid), ""),
+    ):
+        cid = str(cand or "")
+        if cid.isalnum():        # repr/对象串含括号空格，章号只会是字母数字
+            return cid
+    return ""
+
+
+def points_prove_no_video(job_points: Optional[list]) -> bool:
+    """True 仅当"真读到了该章的点、且点里没有任何 video"。
+
+    空点集代表没测到（探测失败/传错章号），不是测到了 0 个视频。把前者当后者会
+    把真实视频章判成非视频并从队列里剔除。
+    """
+    if not job_points:
+        return False
+    return not any((p or {}).get("type") == "video" for p in job_points)
+
+
+def combined_verify_from_points(points: Optional[list], cid: str = "") -> Optional[dict]:
+    """会话内读到的点级（可跨多章）→ E6.2 复核形状（与 live_verify_chapter 同构）。
+
+    `cid` 给定时先把点级**过滤到该章**——多章深读后 `_combined_points` 覆盖全部
+    未完成章，不过滤会把别章的点数合计进本章快照；该章没有点 → 返回 None 交回
+    独立复核。live_finished 必须带上：reconcile 的 D14 治愈（服务端判 finished
+    的点直接落 COMPLETED）只认这个集合。只传 live_pending 的旧实现让「整章早已
+    看完」的候选治不好 —— run 36984897107 的 1217304741 进页 0% 服务端就回
+    isPassed=true，仍被 rollback 优先规则重新投出去白看 9.5 分钟。
+    """
+    if not points:
+        return None
+    from tvdp.tdvp import build_live_finished, build_live_pending, chapter_video_summary
+    if cid:
+        pts = [p for p in points
+               if str(p.get("task_id") or "").split(":")[0] == str(cid)]
+        if not pts:
+            return None
+    else:
+        pts = list(points)
+    tv, tf = chapter_video_summary(pts)
+    return {
+        "video_total": tv,
+        "video_finished": tf,
+        "live_pending": build_live_pending(pts),
+        "live_finished": build_live_finished(pts),
+        "points": pts,
+    }
+
+
+def duration_probe_policy(video_index) -> "tuple[bool, float]":
+    """`(要不要先激活目标点, 轮询预算秒)`（纯函数）。
+
+    `:videoN` 那一帧不激活就永远没有 metadata（对照实测见
+    `app.e2_headed_gha.should_inject_v3`），所以时长探测也必须走那一次点击；
+    预算还要给"点击→metadata 到位"留时间 —— 真站 run 35673388111 里约 24s，
+    原来那 25s 刚好把自己判成探测失败，回退静态 900s 墙钟，砍掉了一个已经
+    播到 92%、服务端已回 isPassed=true 的子进程。
+    """
+    try:
+        idx = int(video_index or 1)
+    except (TypeError, ValueError):
+        idx = 1
+    return (True, 45.0) if idx > 1 else (False, 25.0)
+
+
+def mark_stale_with_source(existing, *, by_catalog, by_points,
+                           by_recheck=None) -> list:
+    """E6.2 降级 COMPLETED 记录，并把**是哪条腿降的**写进账本 detail（纯函数）。
+
+    三条腿判据不同、误判方向也可能不同：`stale_completed_by_catalog` 看目录层的
+    job_remaining（含非视频的 other 点），`stale_completed_by_points` 看点级快照的
+    video 未 finish，`stale_ui_completed_for_recheck`（A3）看 UI 证据是否超过
+    体检 TTL。原先两者被合成一个 `stale_ids`、detail 写死成同一句话，
+    于是真站 run 35678657158 之后无从判断是谁把 live 已 finished 的章打回队列。
+    """
+    tag = {}
+    for tid in by_catalog or []:
+        tag[tid] = "catalog"
+    for tid in by_points or []:
+        tag[tid] = f"{tag[tid]}+points" if tid in tag else "points"
+    for tid in by_recheck or []:
+        tag[tid] = f"{tag[tid]}+ui-recheck" if tid in tag else "ui-recheck"
+    stale_ids = list(dict.fromkeys(
+        list(by_catalog or []) + list(by_points or []) + list(by_recheck or [])))
+    for tid in stale_ids:
+        rec = existing.get(tid)
+        if rec is not None:
+            rec.mark_stale(detail="chapter has unfinished points; "
+                           f"stale_by={tag.get(tid, 'unknown')}")
+    return stale_ids
+
+
+PROBE_MAX_POLLS = 60          # 轮询硬上限：时钟不前进时也不许死循环
+
+
+def poll_video_duration(read_state, *, deadline_s: float = 25.0,
+                        sleep_s: float = 1.0, clock=None,
+                        sleeper=None) -> "tuple[Optional[float], Optional[str]]":
+    """轮询 `read_state()` 直到读到正数时长或预算用尽，返回 `(时长, 失败原因)`。
+
+    Why 轮询：`_probe_video_duration_s` 原先固定 `wait_for_timeout(4000)` 后只取一次
+    `duration`，真站 4/4 次拿到 `readyState=0 / duration=None`（metadata 还没到）——
+    自适应看门狗因此**从未生效**，一直在用静态预算。
+
+    `clock` / `sleeper` 可注入，是为了让这段逻辑能被单测覆盖（不靠真等 25s）。
+    探测本身绝不成为新故障点：`read_state` 抛异常时转成原因返回。
+    """
+    import time as _t
+    now = clock or _t.time
+    nap = sleeper or _t.sleep
+    start = now()
+    last = None
+    polls = 0
+    while True:
+        polls += 1
+        try:
+            last = read_state()
+        except Exception as e:
+            return None, f"探测读取异常: {type(e).__name__}: {e}"
+        d = last.get("duration") if isinstance(last, dict) else None
+        if d and d > 0:
+            return float(d), None
+        if now() - start >= deadline_s or polls >= PROBE_MAX_POLLS:
+            return None, (f"{deadline_s:.0f}s 内未读到 video.duration"
+                          f"（最后 st={last}）—— 可能没进播放器/无视频/登录未通过")
+        nap(sleep_s)
+
+
+def child_reported_duration(text: str) -> Optional[float]:
+    """从子进程自己的 stdout 里读出它正在播的视频时长（秒）；读不到返回 None。
+
+    父进程侧的时长探测在结构上就赢不了：它跑在子进程起播**之前**，那会儿页面上
+    还没有激活的播放器（真站两个 run 的子日志实证：点 1 轮询 25s、点 ≥2 先激活
+    再轮询 45s，都只读到 `duration=None`）→ 自适应看门狗从未生效。而这个数子进程
+    一直有，就在它的 Step F `Video ready: duration=NNNs ...` 行里。
+
+    取**最后一次**播报：引擎会重绑/重载播放器，最后报的那段才是它真正在播的。
+    截断/半行一律不认（结尾那个 `s` 是必需项）—— 把 `duration=113` 读成 113s
+    比回退 base 预算危险得多：真值可能是 1130s。
+    """
+    import re
+    if not text:
+        return None
+    found = re.findall(r"Video ready:.*?duration=(\d+(?:\.\d+)?)s(?![\w.])", text)
+    if not found:
+        return None
+    try:
+        return float(found[-1])
+    except ValueError:
+        return None
+
+
+def _adaptive_video_watch_s(base_max_s: int,
+                            video_duration_s: Optional[float] = None,
+                            ceiling_s: int = 2400) -> int:
+    """按**实际视频时长**自适应 per-chapter 看门狗预算（P0-01/P0-07）。
+
+    事故：run 34571235181 选了 1217304712（视频 838s），静态默认 900s 看门狗
+    在 play 到 ~46% 时把子进程杀掉 → TIMEOUT（本不该发生）。长视频按
+    `视频时长 * 1.5 + 300s`（播放正确时长 + 登录/进入/逐段过渡/心跳 overhead）
+    展开预算；不知道时长则回落到 base_max_s，并用 ceiling_s 设硬顶（防跑飞顶
+    掉 GHA 50min 上限）。
+
+    Args:
+        base_max_s: 兜底预算（取不到时长时用的保底值，默认 env/900）。
+        video_duration_s: 该章真实视频总长（秒）；None/<=0 时不启用自适应。
+        ceiling_s: 自适应预算的硬顶（秒），防超工作流时限。
+    Returns:
+        该章应使用的看门狗上限（秒）。
+    """
+    base = int(base_max_s or 0)
+    if not video_duration_s or video_duration_s <= 0:
+        return base
+    ceil = max(base, int(ceiling_s or 0))
+    est = int(video_duration_s * 1.5 + 400)
+    return max(base, min(est, ceil))
+
+
+def video_watch_budget(base_max_s: int,
+                       video_duration_s: Optional[float],
+                       probe_error: Optional[str] = None) -> tuple[int, str]:
+    """定 per-chapter 看门狗预算，并**显式给出依据**。
+
+    探测失败仍回退 base（不让时长探测成为新故障点），但降级必须可见可归因：
+    静默回退曾让 846s 视频只拿到 900s 预算、播到 34% 被 killpg 砍成 TIMEOUT，
+    而日志里一行线索都没有。
+    """
+    budget = _adaptive_video_watch_s(base_max_s, video_duration_s)
+    if video_duration_s and video_duration_s > 0:
+        return budget, f"ok: video={video_duration_s:.0f}s -> budget={budget}s"
+    return budget, (f"fallback: 时长探测失败({probe_error or '探测未返回时长'}) "
+                    f"-> 静态 {budget}s；长视频有被误杀成 TIMEOUT 的风险")
+
+
+def _env_video_duration() -> "tuple[Optional[float], Optional[str]]":
+    """XUE_VIDEO_DURATION_S 显式覆盖（原时长探测的 env 快路径，单点收敛）。"""
+    ev = os.environ.get("XUE_VIDEO_DURATION_S")
+    if not ev:
+        return None, None
+    try:
+        v = float(ev)
+    except ValueError:
+        return None, f"XUE_VIDEO_DURATION_S 非数字: {ev!r}"
+    return (v, None) if v > 0 else (None, "XUE_VIDEO_DURATION_S <= 0")
+
+
+def _make_no_video_work_skipper(course_key: str):
+    """窗口跳过器工厂：点级快照（24h 内）证明「无视频工作」的章跳过深读。
+
+    两条跳过依据（failure-safe：任何异常/缺数据都不跳，宁可多读不可漏读）：
+      - has_video 且 finished>=total → 视频点全看完（剩余只可能是非视频任务）；
+      - has_video=False → 读过且 cards 帧在、但没有任何视频点（纯文档/测验章）。
+    没有这层记忆时，这类章会永久占据 Top-K 窗口槽位 —— 窗口停在原地，
+    后续章永远不被点亮（2026-10-06 用户实测发现的停滞边界）。
+    """
+    def _skip(cid) -> bool:
+        try:
+            from app.registry.task_registry import (load_chapter_points,
+                                                    POINTS_SNAPSHOT_TTL_S,
+                                                    _snapshot_is_fresh)
+            snap = (load_chapter_points(course_key) or {}).get(str(cid))
+            if not snap or not _snapshot_is_fresh(
+                    snap, datetime.now(timezone.utc), POINTS_SNAPSHOT_TTL_S):
+                return False
+            if snap.get("has_video"):
+                total = int(snap.get("video_total") or 0)
+                fin = int(snap.get("video_finished") or 0)
+                return total > 0 and fin >= total
+            return True      # has_video=False：读过（帧在）但无视频点
+        except Exception:
+            return False
+    return _skip
+
+
+def _mark_no_video_work_snapshots(course_key: str, combined: Optional[dict]) -> None:
+    """把本轮深读证明「没有任何视频点」的章落成 has_video=False 快照。
+
+    materialize_video_counts_from_points 只给**有视频点**的章写快照；纯文档/
+    测验章（或帧在而无任务点行的章）没有任何记录，下一轮窗口无法跳过它们。
+    这里补上跨轮记忆。视频「全 finished」的章不在此列 —— materialize 写的
+    has_video=True finished=total 语义更完整，skipper 走「全看完」分支。
+    """
+    cids = (combined or {}).get("no_video_cids") or []
+    if not cids:
+        return
+    from app.registry.task_registry import set_chapter_point_snapshot
+    for cid in cids:
+        try:
+            set_chapter_point_snapshot(course_key, str(cid),
+                                       video_total=0, video_finished=0,
+                                       has_video=False)
+        except Exception:
+            continue
+    print(f"[scheduler] 无视频工作章已记忆，后续窗口跳过: {sorted(cids)}",
+          flush=True)
+
+
+def _probe_video_duration_s(course_url: str, chapter_id: str,
+                            video_index: int = 1) -> "tuple[Optional[float], Optional[str]]":
+    """尽力而为读取章节视频总时长（秒），供自适应看门狗用。
+
+    `video_index>1`（`:videoN` dispatch）时绑定读**目标点自己**的帧时长 ——
+    旧的整章探测拿到的是点 1 的时长，`:video2` 的看门狗预算因此失真（P1）。
+    目标点不可解析时显式报错回退 base 预算（降级打日志），不拿点 1 冒充。
+
+    返回 `(时长, 失败原因)`。**失败不再静默**：调用方拿原因去记日志/证据，
+    否则"自适应看门狗没生效"这种降级在日志里完全看不出来（曾把 846s 视频
+    按静态 900s 预算砍成 TIMEOUT）。探测本身仍绝不成为新故障点。
+    环境显式给 `XUE_VIDEO_DURATION_S` 时直接采用，免多余开浏览器。
+    """
+    import os as _os2
+    ev = _os2.environ.get("XUE_VIDEO_DURATION_S")
+    if ev:
+        try:
+            v = float(ev)
+        except ValueError:
+            return None, f"XUE_VIDEO_DURATION_S 非数字: {ev!r}"
+        return (v, None) if v > 0 else (None, "XUE_VIDEO_DURATION_S <= 0")
+    if not chapter_id:
+        return None, "无 chapter_id"
+    if not (_os2.environ.get("CX_USER") and _os2.environ.get("CX_PASS")):
+        # 探测要登录才读得到时长；没凭据还照样起 headed 浏览器，结果是桌面弹一个
+        # 停在 passport2 登录页的窗口、几十秒后自己消失（测试里就会这么炸）。
+        return None, "缺少 CX_USER/CX_PASS 凭据，跳过时长探测"
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        from app.e2_headed_gha import (get_video_state, build_base_url,
+                                       enumerate_video_objectids,
+                                       pick_target_objectid, activate_target_point)
+        from tvdp.tdvp import _tdvp_course_params
+        import os as _os3
+        from playwright.sync_api import sync_playwright
+        params = _parse_url_params(course_url)
+        cp = _tdvp_course_params(params)
+        base = build_base_url(chapter_id, cp)
+        user = _os3.environ.get("CX_USER")
+        pw = _os3.environ.get("CX_PASS")
+        display = _os3.environ.get("DISPLAY", ":99")
+        with sync_playwright() as pwc:
+            from utils.browser_factory import launch_kwargs, display_args
+            browser = pwc.chromium.launch(
+                headless=False, **launch_kwargs(),
+                args=[*display_args(display), "--no-sandbox",
+                      "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            ctx = browser.new_context()
+            page = ctx.new_page()
+            from utils.cookie_store import ensure_login
+            ensure_login(page, ctx, base, user, pw)
+            page.goto(base, wait_until="domcontentloaded", timeout=30000)
+            target_objectid = None
+            if video_index and video_index > 1:
+                for _ in range(10):
+                    oids = enumerate_video_objectids(page)
+                    target_objectid = pick_target_objectid(oids, video_index)
+                    if target_objectid:
+                        break
+                    page.wait_for_timeout(1000)
+                if not target_objectid:
+                    browser.close()
+                    return None, (f"章内第 {video_index} 个视频点不可解析，"
+                                  f"回退 base 预算")
+            activate, deadline_s = duration_probe_policy(video_index)
+            if activate and target_objectid:
+                activate_target_point(page, target_objectid)
+            dur, dur_err = poll_video_duration(
+                lambda: get_video_state(page, target_objectid),
+                deadline_s=deadline_s, sleep_s=1.0)
+            browser.close()
+            return dur, dur_err
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+def _split_video_target(task_or_cid) -> tuple[str, int]:
+    """把 task_id / 章节 id 拆成 (chapter_id, video_index)。
+
+    Options B 逐段视频 dispatch：task_id 形如 `<chapterId>`(=video1) 或
+    `<chapterId>:video<N>`。返回视频段序号用于 app.run --video-index。
+    非 video 后缀或非 string → index=1（按第一段处理）。
+    """
+    s = str(task_or_cid or "")
+    if s.endswith(":video") or ":video" not in s:
+        return s, 1
+    cid, _, part = s.partition(":video")
+    try:
+        return cid, max(1, int(part))
+    except (TypeError, ValueError):
+        return s.split(":")[0], 1
+
+
+def _apply_excluded(queue, exclude_chapters) -> list:
+    """从 ExecutionQueue items 中剔除「本轮 run 已处理过」的章节，返回过滤后的 items 列表。
+
+    exclude_chapters: set[str] 的本轮已处理章节 id。用于多章循环中避免
+    「同一章在本轮内被重复 re-probe 重选」（如一门既含视频任务点、又含
+    非视频任务点导致服务端 job_remaining>0 的章）。
+    返回过滤后的 items；队列已空则返回空列表。
+    """
+    if not exclude_chapters:
+        return list(queue.items or [])
+    ex = {str(c) for c in (exclude_chapters or [])}
+    out = []
+    for it in (queue.items or []):
+        tid = str(it.get("task_id") or "")
+        cid = str(it.get("chapter_id") or "")
+        drop = tid in ex
+        if cid in ex:
+            # 排除整章：仅对 base 视频（task_id 形如 <cid>，无 :videoN 后缀）生效，
+            # 让同章的下一个视频段（<cid>:video2...）保留 → 逐段视频 dispatch。
+            if ":" not in tid:
+                drop = True
+        if not drop:
+            out.append(it)
+    return out
+
+
+def _fallback_chapter(course_url: str, course_key: str,
+                      exclude_chapters=None) -> Optional[str]:
+    """目录抓取为空/探测异常时的回退选章。
+
+    优先：URL 里的 chapterId —— 但仅当它**未被本轮处理**（否则会无限重放同一章）。
+    否则：回退到**已持久化的 registry 队列**，取第一个还没完成、也没被本轮
+    处理的视频章（保证 catalog 抓空时仍能推进到真正的新章，而不是死磕当前章）。
+
+    Args:
+        exclude_chapters: 本轮已处理章节名集合（去重）。
+    Returns:
+        选中的 chapter_id；无可推进章节则 None。
+    """
+    ex = {str(c) for c in (exclude_chapters or [])}
+    from resolvers.course_resolver import _parse_url_params
+    params = _parse_url_params(course_url)
+    url_cid = params.get("chapter_id")
+    if url_cid and url_cid not in ex:
+        return url_cid
+    # URL 章已在本轮处理过（或取不到）→ 从持久化 registry/队列找下一个真正 pending 的章
+    try:
+        from app.registry.task_registry import (
+            load_registry, done_chapter_ids_from_registry, reconcile_queue,
+        )
+        reg = load_registry(course_key)
+        if reg:
+            done = set(done_chapter_ids_from_registry(reg))
+            q = reconcile_queue(course_key, reg, done, points_map={})
+            for it in (q.items or []):
+                cid = str(it.get("chapter_id") or "")
+                if cid and cid not in ex and cid not in done:
+                    rec = reg.get(it.get("task_id", ""))
+                    if rec is not None and \
+                            (getattr(rec, "task_type", "video") or "video") == "video" \
+                            and rec.status in ("PENDING", "READY", "FAILED",
+                                              "DISCOVERED", "UNKNOWN"):
+                        return cid
+    except Exception as e:
+        print(f"[scheduler] TDVP: registry fallback failed: {e}", file=sys.stderr)
+    return None
+
+
+def _task_is_blocked(course_key: str, task_id: str, chapter_id: str = "",
+                     reg=None) -> bool:
+    """判断单需要 task 是否已 BLOCKED / 达到连续失败上限，用于「跳过」而非重跑。
+
+    场景：某 video 章反复在跑（如 1217304719 抓不到 video），consecutive_failures
+    在某次 run 内才累计跨过 max_attempts → 本次循环重探时仍可能被 re-probe 重选。
+    调度循环需在真正执行前显式跳过它，避免重跑一个注定失败的任务。
+    reg 可显式传入 registry（便于测试）；缺省从磁盘加载。
+    """
+    try:
+        if reg is None:
+            from app.registry.task_registry import load_registry
+            reg = load_registry(course_key)
+        rec = None
+        if task_id and task_id in reg:
+            rec = reg[task_id]
+        elif chapter_id:
+            for t in reg.values():
+                if getattr(t, "chapter_id", "") == chapter_id:
+                    rec = t
+                    break
+        if rec is None:
+            return False
+        if getattr(rec, "status", "") == "BLOCKED":
+            return True
+        cf = int(getattr(rec, "consecutive_failures", 0) or 0)
+        ma = int(getattr(rec, "max_attempts", 0) or 0)
+        return ma > 0 and cf >= ma
+    except Exception:
+        return False
+
+
+def _drop_frozen_candidates(candidates, existing):
+    """选下一个前，按 existing 里的 BLOCKED 章整章过滤。
+
+    reconcile 的章级冻结会把 BLOCKED 章删出队列，但 E6.2 实时重建/同章衍生可能把
+    同章的「新 task」重新建成 PENDING；本护栏在最终选择前再次按 BLOCKED 章剔除，
+    确保被冻结的候选（含衍生同章任务）绝不进入待执行。
+    Returns: (dropped:int, filtered:list, frozen:set[str])
+    """
+    frozen = {
+        (t.chapter_id or "") for t in existing.values()
+        if getattr(t, "status", "") == "BLOCKED"
+    }
+    out = []
+    for _c in candidates:
+        _rr = existing.get(_c.get("task_id", ""))
+        _cid = (getattr(_rr, "chapter_id", "") if _rr is not None else "")
+        if _cid and _cid in frozen:
+            continue   # 冻结章（含衍生同本章任务），不选
+        out.append(_c)
+    return len(candidates) - len(out), out, frozen
+
+
+def _align_chapter_url(course_url: str, chapter_id: str) -> str:
+    """章视角对齐：用任务自己的 chapter_id 重建课程 URL（锚定该章），
+    避免沿用 state 里旧章的 raw_url 锚点。失败/无 chapter_id 时原样返回。
+    """
+    if not chapter_id:
+        return course_url
+    try:
+        from resolvers.course_resolver import _parse_url_params
+        from tvdp.tdvp import _tdvp_course_params
+        from app.e2_headed_gha import build_base_url
+        _p = _parse_url_params(course_url)
+        _cp = _tdvp_course_params(_p)
+        return build_base_url(chapter_id, _cp) or course_url
+    except Exception:
+        return course_url
+
+
+def _dispatch_evidence_gate(candidates, existing, *, read_points, rebuild, note=None):
+    """投递前的一次问证据：`<cid>:videoN` 里 "N>=2" 是一条**断言**，投它之前就地要读数。
+
+    read_points(chapter_id) -> Optional[int]：该章**本轮**新鲜数出的视频点数（None=没读到）。
+    rebuild() -> list：收掉幻影之后重建候选列表（生产侧同时负责落盘）。
+
+    判据本体在 `reconcile.dispatch_gate_decision`（L1 覆盖）。这一层只保证三件事：
+      * 章自己的记录（index<=1）与"自己被看见过"的记录，一次额外读数都不许多花；
+      * 新鲜读数反驳时当场收掉、换下一个候选，而不是让引擎花掉整晚去撞（max_chapters=1）；
+      * 读不到一律照投 —— 把"没读到"当成"没有"会饿死真实学习量（§4.17 实测的
+        1217304741:video2 就是 2 点章里那个未完成的真点）。
+    """
+    from app.registry.reconcile import (
+        EVIDENCE_PRUNE, EVIDENCE_UNKNOWN, dispatch_gate_decision,
+        dispatch_gate_needs_read, prune_phantom_video_points,
+    )
+    say = note or (lambda msg: print(f"[scheduler] {msg}", flush=True))
+    while candidates:
+        tid = str(candidates[0].get("task_id", "") or "")
+        cid, idx = _split_video_target(tid)
+        if not cid or not dispatch_gate_needs_read(existing.get(tid), video_index=idx):
+            return candidates       # 章自己的点 / 已被看见过的点：不花读数，直接投
+        obs = read_points(cid)
+        verdict = dispatch_gate_decision(existing.get(tid), video_index=idx, observed=obs)
+        if verdict == EVIDENCE_UNKNOWN:
+            say(f"TDVP: DISPATCH-GATE {tid} 本轮读不到 {cid} 的点级 —— 照投"
+                f"（读空不等于该章没有第 {idx} 个视频点）")
+            return candidates
+        if verdict != EVIDENCE_PRUNE:
+            return candidates
+        gone = prune_phantom_video_points(existing, chapter_id=cid, observed=obs)
+        if not gone:
+            return candidates
+        say(f"TDVP: DISPATCH-GATE {tid}: 新鲜读数说 {cid} 只有 {obs} 个视频点 -> "
+            f"收掉 {sorted(gone)}，换下一个候选（不等引擎拿整晚去撞）")
+        candidates = rebuild()
+    return candidates
+
+
+def _run_tdvp_probe(course_url: str, course_key: str,
+                    run_id: str = "local",
+                    exclude_chapters=None) -> Optional[str]:
+    """E6.1 TDVP Probe: Discovery → Reconcile Registry → Reconcile Queue → pick next task.
+
+    Args:
+        exclude_chapters: 可选 set[str]，本轮 run 已处理过的章节 id，
+            选择下一个任务时排除它们（多章 re-probe 去重）。
+
+    Returns:
+        chapter_id string, or None if all chapters done / all excluded.
+    """
+    if exclude_chapters:
+        exclude_chapters = {str(c) for c in exclude_chapters}
+    try:
+        from tvdp.tdvp import fetch_course_discovery, build_tasks_from_discovery
+        from tvdp.tdvp import live_verify_chapter
+        from app.registry.task_registry import load_registry, save_registry
+        from app.registry.reconcile import reconcile_registry
+        from app.registry.task_registry import done_chapter_ids_from_registry, reconcile_queue
+        from app.registry.click_probe import click_probe_chapter_id
+        from resolvers.course_resolver import _parse_url_params
+
+        params = _parse_url_params(course_url)
+
+        # 洞3：先读现有 registry 预测一个「疑似队首章」。
+        from app.registry.task_registry import load_chapter_points, merge_done_with_points
+        _pts_map = load_chapter_points(course_key)
+        _current_reg = load_registry(course_key)
+        _pred_head = params.get("chapter_id")
+        if _current_reg:
+            try:
+                _done0 = merge_done_with_points(
+                    done_chapter_ids_from_registry(_current_reg), set(), _pts_map)
+                _q0 = reconcile_queue(course_key, _current_reg, _done0,
+                                      points_map=_pts_map)
+                if _q0.items:
+                    _c0 = _q0.items[0].get("chapter_id") or ""
+                    if _c0:
+                        _pred_head = _c0
+            except Exception:
+                pass
+
+        combined = _PROBE_FETCH_CACHE.pop(course_key, None)
+        if combined is None:
+            from tvdp.tdvp import fetch_course_detail_and_verify
+            combined = fetch_course_detail_and_verify(course_url, _pred_head)
+        if combined is not None:
+            chapters_raw = combined.get("chapters") or []
+            _combined_points = combined.get("points") or []
+            _mark_no_video_work_snapshots(course_key, combined)
+        else:
+            from tvdp.tdvp import fetch_course_discovery
+            chapters_raw = fetch_course_discovery(course_url)
+            _combined_points = []
+        # ── issue #4 第五层卡点：把本次会话读到的点级落成快照 ──────────
+        # 校正后的 `_combined_points` 覆盖第一个未完成章，但若不写入点级快照，
+        # 下方 `build_tasks_from_discovery(..., video_counts=video_counts_from_points(
+        # load_chapter_points()))` 拿不到 video_counts → 该章走 other → queue 空 →
+        # "No pending task / probe empty"。bootstrap 已通过
+        # materialize_video_counts_from_points 修复同一问题；probe 共享同一函数。
+        if _combined_points:
+            from app.registry.task_registry import materialize_video_counts_from_points
+            materialize_video_counts_from_points(course_key, _combined_points)
+        # 目录拉取空：可能是 CI/Xvfb 抖动的瞬时失败，先显式重试一次。
+        # 重试后仍空 → **不臆测选章**（不调用 _fallback_chapter 硬猜）：
+        #   否则会像 run 34564369602 那样「目录空 → 兜底到非目标章」，
+        #   与「前进到图里下一个真正未完成点」的意图相违背。
+        #   返回 None → 外层 run_scheduler 判 NOOP；日志暴露 PROBE_EMPTY 供追溯。
+        if not chapters_raw:
+            try:
+                print("[scheduler] TDVP: catalog empty, retrying once …", flush=True)
+                from tvdp.tdvp import fetch_course_discovery as _retry_fetch
+                chapters_raw = _retry_fetch(course_url)
+            except Exception as _re:
+                print(f"[scheduler] TDVP: catalog retry error: {_re}",
+                      file=sys.stderr)
+        if not chapters_raw:
+            print("[scheduler] TDVP: PROBE_EMPTY — 目录探测空(含重试)，不臆测选章，"
+                  "本轮跳过 (next=None)", file=sys.stderr)
+            return None
+
+        # 1.5 服务器端 DOM 渲染状态 map
+        dom_status = {}
+        for ch in (chapters_raw or []):
+            cid = str(ch.get("chapter_id") or "")
+            if cid:
+                dom_status.setdefault(cid, ch.get("status", "unknown"))
+
+        # 2. 构建 discovery 任务 → Reconcile canonical registry
+        #    已知点级快照的章要按**真实视频点数量**拆条：否则一章永远只有 1 条记录，
+        #    第 2、3 个视频点在账上不存在，章级快照说"还有点没做完"时只能反复重播第 1 点。
+        from app.registry.task_registry import (load_chapter_points,
+                                               video_counts_from_points)
+        tasks = build_tasks_from_discovery(
+            chapters_raw,
+            video_counts=video_counts_from_points(load_chapter_points(course_key)))
+        reg_before = load_registry(course_key)
+        # 多章点级真源：本次会话读到 finished 的点，铸造时直接落完成（D14-mint）。
+        # 否则已看完的点以裸 DISCOVERED 进队列被盲目重投（站点不为已完成点起流）。
+        from tvdp.tdvp import build_live_finished
+        existing, report = reconcile_registry(
+            course_key, reg_before, tasks, dom_status,
+            live_finished=build_live_finished(_combined_points))
+        save_registry(course_key, existing)
+        # [DIAG] 确认第一次 reconcile 后 BLOCKED 是否存活（活体可能在此被 dom_done 覆盖）
+        _dp = "1217304719"
+        _dr = existing.get(_dp)
+        _dpp_disc = [(_t.task_id, _t.title, getattr(_t, "task_type", ""))
+                     for _t in (tasks or [])
+                     if (getattr(_t, "chapter_id", "") == _dp)
+                     or (getattr(_t, "task_id", "") == _dp)]
+        _dpp_blocked = sorted({t.chapter_id for t in existing.values()
+                               if getattr(t, "status", "") == "BLOCKED"})
+        print(f"[scheduler] DIAG reconcile1 "
+              f"reg_entry={getattr(reg_before.get(_dp), 'status', None)} "
+              f"cf_entry={getattr(reg_before.get(_dp), 'consecutive_failures', None)} "
+              f"after={getattr(_dr, 'status', None)} "
+              f"ppp_dom={dom_status.get(_dp)} cf_after={getattr(_dr, 'consecutive_failures', None)} "
+              f"discovery_ppp={_dpp_disc} blocked_after={_dpp_blocked}", flush=True)
+        print(f"[scheduler] TDVP: reconcile → {len(existing)} tasks "
+              f"(upcoming={report.upcoming} kept={report.kept_completed} "
+              f"downgraded={report.downgraded} upgraded_ui={report.upgraded_ui})",
+              flush=True)
+
+        # 2.5 E6.2：COMPLETED 但真实仍有未完成任务点的章，降级 STALE 重新入队。
+        #     来源三路：
+        #      (a) 目录层 job_remaining>0（L1，廉价）
+        #      (b) 点级快照显示还有 video 点未 finish（洞2，已持久化的前一棵树）
+        #      (c) UI 证据超过体检 TTL（A3：DOM 误标的完成记录不许永久存活，
+        #          降级后下轮成为 head 吃 E6.2 live 复核——真完成治愈回
+        #          SERVER_VERIFIED 不重播，真漏被确认）
+        from app.registry.reconcile import (stale_completed_by_catalog,
+                                  stale_completed_by_points,
+                                  stale_ui_completed_for_recheck)
+        from app.registry.task_registry import load_chapter_points
+        _pts = load_chapter_points(course_key)
+        stale1 = stale_completed_by_catalog(existing, chapters_raw, points_map=_pts)
+        stale2 = stale_completed_by_points(existing, _pts)
+        stale3 = stale_ui_completed_for_recheck(existing)
+        stale_ids = mark_stale_with_source(existing, by_catalog=stale1,
+                                           by_points=stale2, by_recheck=stale3)
+        if stale_ids:
+            save_registry(course_key, existing)
+            print(f"[scheduler] TDVP: stale={len(stale_ids)} "
+                  f"by_catalog={stale1} by_points={stale2} "
+                  f"by_recheck={stale3} "
+                  f"chapters re-queued: {sorted({existing[s].chapter_id for s in stale_ids if s in existing})}",
+                  flush=True)
+
+        # 3. done_ids 仅为 derived cache（canonical 状态在 registry.completion）。
+        #    洞2：用持久化的点级快照校准——凡有快照显示"还有 video 点未 finish"的章，
+        #    即使 registry 把它记为 COMPLETED，也不放行（不会当 done 跳过）。
+        from app.registry.task_registry import load_chapter_points, merge_done_with_points
+        pts_map = load_chapter_points(course_key)
+        done_ids = merge_done_with_points(
+            done_chapter_ids_from_registry(existing), set(), pts_map)
+        print(f"[scheduler] TDVP: done={len(done_ids)} chapters: {sorted(done_ids)}",
+              flush=True)
+
+        # 4. Reconcile Queue（派生物）
+        queue = reconcile_queue(course_key, existing, done_ids, points_map=pts_map)
+        print(f"[scheduler] TDVP: queue has {len(queue.items)} READY tasks", flush=True)
+        from app.registry.task_registry import coarse_parked_verified_points
+        _parked = coarse_parked_verified_points(existing)
+        if _parked:
+            print(f"[scheduler] TDVP: COARSE-PARKED (服务端已确认、只被章级读数回炉，"
+                  f"不再投放): {_parked}", flush=True)
+        # [DIAG] 建队时 BLOCKED 集：若 ppp 不在 freeze、却在队列里 → 泄漏在 reconcile1/queue 本身
+        _dq4 = existing.get(_dp)
+        _dq_frozen = sorted({t.chapter_id for t in existing.values()
+                             if getattr(t, "status", "") == "BLOCKED"})
+        print(f"[scheduler] DIAG queue4 ppp_status={getattr(_dq4, 'status', None)} "
+              f"frozen={_dq_frozen}", flush=True)
+
+        # 4.2 方案1（2026-09-21 用户选定）：BLOCKED 章的服务端真源恢复。
+        #     冻结章不进队列 → 4.5 的 live 复核永远轮不到它们；这里显式读冻结章
+        #     的 finished 点（L2 成本：每冻结章一次），命中即以 SERVER_VERIFIED
+        #     恢复（用户手动看完的场景 —— replay 产生不了事件，点已完成不会播），
+        #     再重建队列。读数失败/无 finished → 保持冻结（恢复必须踩在真源上）。
+        if _dq_frozen:
+            from app.registry.reconcile import heal_blocked_by_live
+
+            # 治愈也要预算：每个冻结章一次独立浏览器,冻结多了会把一轮调度变成
+            # 连续开窗表演（系统性环境故障冻结整门课时尤其如此）。预算与深读
+            # 窗口同源（XUE_PROBE_TOPK）；没轮到的章下一轮再试 —— 冻结章本来
+            # 就不进队列,跳过它不阻塞本轮投递。
+            from tvdp.tdvp import _probe_topk
+            _heal_budget = {"left": (_probe_topk() or 3)}
+
+            def _verify_frozen_points(cid):
+                if _heal_budget["left"] <= 0:
+                    print(f"[scheduler] heal 预算用尽,本轮跳过冻结章 {cid}",
+                          flush=True)
+                    return None
+                _heal_budget["left"] -= 1
+                _v = live_verify_chapter(
+                    cid, params.get("course_id", ""), params.get("clazz_id", ""),
+                    params.get("cpi", ""),
+                    os.environ.get("CX_USER", ""), os.environ.get("CX_PASS", ""),
+                    enc=params.get("enc", ""))
+                return (_v or {}).get("points")
+
+            existing, _heal_rep = heal_blocked_by_live(
+                course_key, existing, tasks, dom_status, _verify_frozen_points)
+            if _heal_rep.healed_by_server:
+                save_registry(course_key, existing)
+                print(f"[scheduler] TDVP: healed_by_server="
+                      f"{_heal_rep.healed_by_server} "
+                      f"tasks={sorted(_heal_rep.repair_map)}", flush=True)
+                pts_map = load_chapter_points(course_key)
+                done_ids = merge_done_with_points(
+                    done_chapter_ids_from_registry(existing), set(), pts_map)
+                queue = reconcile_queue(course_key, existing, done_ids,
+                                        points_map=pts_map)
+                print(f"[scheduler] TDVP: queue rebuilt after heal, "
+                      f"{len(queue.items)} READY tasks", flush=True)
+
+        # 4.5 E6.2：对候选目标章做 L2 live 复核，把「多视频章」拆成逐个 video task，
+        #     并让「当前未完成的视频」不被提前当作完成（4708 双视频只播 1 个的问题）。
+        if queue.items:
+            head = queue.items[0]
+            head_cid = head_chapter_id(head, existing, tasks)
+            if head_cid:
+                verify = None
+                # 洞3：目录发现阶段已顺带读到的点级（同一次浏览器，覆盖全部未完成
+                #     章），按章过滤后直接复用，避免再开一次浏览器重复深读；
+                #     head 章不在读数里时 combined_verify 返回 None → 走独立复核。
+                #     live_finished 一并带上（D14 治愈入口），见 combined_verify_from_points。
+                if _combined_points:
+                    verify = combined_verify_from_points(_combined_points, head_cid)
+                if verify is None:
+                    verify = live_verify_chapter(
+                        head_cid,
+                        params.get("course_id", ""),
+                        params.get("clazz_id", ""),
+                        params.get("cpi", ""),
+                        os.environ.get("CX_USER", ""),
+                        os.environ.get("CX_PASS", ""),
+                        enc=params.get("enc", ""),
+                    )
+                if verify is not None:
+                    total_v = verify.get("video_total", 0)
+                    live_pending = verify.get("live_pending") or set()
+                    live_finished = verify.get("live_finished") or set()
+                    # 洞2：点级真源快照存进 registry（缓存层）；done 由点级校准。
+                    from app.registry.task_registry import (
+                        set_chapter_point_snapshot, load_chapter_points,
+                        merge_done_with_points,
+                    )
+                    set_chapter_point_snapshot(
+                        course_key, head_cid,
+                        video_total=total_v,
+                        video_finished=verify.get("video_finished", 0),
+                        has_video=total_v > 0,
+                    )
+                    # 重建 discovery：真正的视频点数量 + live pending
+                    video_counts = {head_cid: total_v} if total_v > 0 else None
+                    tasks2 = build_tasks_from_discovery(chapters_raw, video_counts=video_counts)
+                    existing2, report2 = reconcile_registry(
+                        course_key, existing, tasks2, dom_status,
+                        live_pending=live_pending, live_finished=live_finished)
+                    # 幻影 :videoN 在**投递之前**收掉：同一次 live 读数既给了该章真实的
+                    # 点列表，就没有理由再让引擎花一整晚的唯一次投递去撞它（#26）。
+                    from app.registry.reconcile import prune_phantom_points_after_refine
+                    _phantom = prune_phantom_points_after_refine(
+                        existing2, chapter_id=head_cid, verify=verify)
+                    if _phantom:
+                        print(f"[scheduler] TDVP: REFINE-PRUNED {head_cid}: "
+                              f"{sorted(_phantom)} —— 这次 live 读数里没有这些点，"
+                              f"不等引擎撞上才收", flush=True)
+                    save_registry(course_key, existing2)
+                    existing = existing2
+                    # [DIAG] E6.2 二次 reconcile 后该章 BLOCKED 是否存活
+                    _dp2 = existing.get(_dp)
+                    print(f"[scheduler] DIAG E6.2 head={head_cid} "
+                          f"ppp_after_e62={getattr(_dp2, 'status', None)}", flush=True)
+                    pts_map = load_chapter_points(course_key)
+                    done_ids = merge_done_with_points(
+                        done_chapter_ids_from_registry(existing), set(), pts_map)
+                    queue = reconcile_queue(course_key, existing, done_ids, points_map=pts_map)
+                    print(f"[scheduler] TDVP: E6.2 after live refine {head_cid} "
+                          f"video_total={total_v} finished_video = "
+                          f"{verify.get('video_finished')} tasks={len(existing2)} "
+                          f"queue={len(queue.items)}", flush=True)
+                    # 该"目标章"实际没有任何视频点（纯文本/知识扩展章，如 4705）：
+                    # 不应把它当作 video 运行——把它从 video READY 排除，避免白白
+                    # 播一个不存在的视频而 DEGRADED/BLOCKED。
+                    # 但只有"真读到了点"才允许这么判：video_total=0 既可能是该章确实
+                    # 无视频，也可能是复核根本没测到（探测失败/章号传错）。把后者当前者
+                    # 会把真实视频章静默降级成 other/PENDING —— 账本失真，不可逆。
+                    if total_v == 0 and not points_prove_no_video(verify.get("points")):
+                        print(f"[scheduler] E6.2 复核未取到 chapter={head_cid} 的点级，"
+                              f"跳过「无视频」降级（video_total=0 不可信）", flush=True)
+                    if total_v == 0 and points_prove_no_video(verify.get("points")):
+                        head_tid = head.get("task_id", "")
+                        rec = existing2.get(head_tid)
+                        if rec is not None and (getattr(rec, "task_type", "video") or "video") == "video":
+                            rec.task_type = "other"
+                            rec.status = "PENDING"      # 非视频 → 不执行
+                            save_registry(course_key, existing2)
+                            done_ids = merge_done_with_points(
+                                done_chapter_ids_from_registry(existing2), set(),
+                                load_chapter_points(course_key))
+                            queue = reconcile_queue(course_key, existing2, done_ids, points_map=load_chapter_points(course_key))
+                            print(f"[scheduler] TDVP: {head_cid} has no video, "
+                                  f"dropped as run target", flush=True)
+
+        # 5. 选下一个任务（剔除本轮已处理过的章节，避免 re-probe 重复重选同一章）
+        candidates = _apply_excluded(queue, exclude_chapters)
+        # 终极护栏：即使 E6.2 实时重建/同章衍生把某章重建回 PENDING（如 1217304719）
+        # 或 QUEUE 重建漏筛，这里在「选下一个」的最后一刻，仍按 existing 里 BLOCKED
+        # 的章整章剔除；同时打印当前冻结集，供诊断泄漏发生在 reconcile 还是衍生。
+        _dropped, candidates, _frozen = _drop_frozen_candidates(candidates, existing)
+        if _dropped:
+            print(f"[scheduler] TDVP: frozen-chapter gate dropped {_dropped} "
+                  f"candidate(s); frozen={sorted(_frozen) if len(_frozen) <= 4 else 'many'}",
+                  flush=True)
+        if not candidates:
+            print("[scheduler] TDVP: queue empty (or all remaining chapters "
+                  "already handled this run)", flush=True)
+            return None
+
+        # ── 投递侧证据闸门（§4.17）：决定投 `<cid>:videoN` 的这一问，就地要证据 ──
+        # §4.16 把同一条判据放在 refine 处，run 35733572959 实测覆盖率 0 —— refine 读的是
+        # **预测队首章**，被投的却是重建队列后的 candidates[0]，两个不是同一个章。
+        _gate_head_cid = locals().get("head_cid", "") or ""
+        _gate_verify = locals().get("verify", None)
+        _gate_reads = {"left": 2}          # 一晚最多两次额外 L2 深读，闸门不许吃掉整晚
+        _gate_observed = {}
+
+        def _read_points(cid):
+            """该章**本轮**新鲜数出的视频点数；内存里没有就开一次 L2 复核（读预算内有界）。"""
+            if cid in _gate_observed:
+                return _gate_observed[cid]
+            obs = None
+            if cid == _gate_head_cid and isinstance(_gate_verify, dict):
+                _v = _gate_verify
+            elif _gate_reads["left"] > 0:
+                _gate_reads["left"] -= 1
+                _v = live_verify_chapter(cid, params.get("course_id", ""),
+                                         params.get("clazz_id", ""), params.get("cpi", ""),
+                                         os.environ.get("CX_USER", ""),
+                                         os.environ.get("CX_PASS", ""),
+                                         enc=params.get("enc", ""))
+            else:
+                _v = None
+            if isinstance(_v, dict):
+                from tvdp.tdvp import chapter_video_summary
+                try:
+                    pts = _v.get("points") or []
+                    obs = int(chapter_video_summary(pts)[0] if pts
+                              else (_v.get("video_total") or 0))
+                except Exception:
+                    obs = None
+            _gate_observed[cid] = obs
+            return obs
+
+        def _rebuild_after_prune():
+            save_registry(course_key, existing)
+            _done = merge_done_with_points(
+                done_chapter_ids_from_registry(existing), set(),
+                load_chapter_points(course_key))
+            _q = reconcile_queue(course_key, existing, _done,
+                                 points_map=load_chapter_points(course_key))
+            return _drop_frozen_candidates(_apply_excluded(_q, exclude_chapters),
+                                           existing)[1]
+
+        candidates = _dispatch_evidence_gate(candidates, existing, read_points=_read_points,
+                                             rebuild=_rebuild_after_prune)
+
+        next_item = candidates[0]
+        next_tid = next_item.get("task_id", "")
+        next_rec = existing.get(next_tid)
+        if not next_rec:
+            print(f"[scheduler] TDVP: next task {next_tid} not in registry", flush=True)
+            return None
+
+        # 有 chapter_id → 直接返回（返回 task_id，调用方用 _split_video_target 取 index）
+        if next_rec.chapter_id:
+            print(f"[scheduler] TDVP: next_task={next_tid} "
+                  f"({next_rec.title})", flush=True)
+            return next_tid
+
+        # 无 chapter_id → click_probe 获取
+        max_probe_attempts = 10
+        for probe_i in range(max_probe_attempts):
+            ch_idx = next_rec._ch_idx
+            cell_idx = next_rec._cell_idx
+            print(f"[scheduler] TDVP: no cid, click-probe ci={ch_idx} si={cell_idx} "
+                  f"({next_rec.title})", flush=True)
+            resolved_cid = click_probe_chapter_id(course_url, ch_idx, cell_idx)
+            if resolved_cid:
+                next_rec.chapter_id = resolved_cid
+                save_registry(course_key, existing)
+                queue2 = reconcile_queue(course_key, existing, done_ids, points_map=pts_map)
+                candidates2 = _apply_excluded(queue2, exclude_chapters)
+                if not candidates2:
+                    return None
+                rec2 = existing.get(candidates2[0]["task_id"])
+                if rec2 and rec2.chapter_id and rec2.chapter_id not in done_ids:
+                    print(f"[scheduler] TDVP: click-probe resolved -> {rec2.task_id}",
+                          flush=True)
+                    return rec2.task_id
+                elif rec2 and rec2.chapter_id and rec2.chapter_id in done_ids:
+                    next_tid = candidates2[0]["task_id"]
+                    next_rec = existing.get(next_tid)
+                    if not next_rec or next_rec.chapter_id:
+                        break
+                    continue
+                else:
+                    next_tid = candidates2[0]["task_id"]
+                    next_rec = existing.get(next_tid)
+                    if not next_rec or next_rec.chapter_id:
+                        break
+                    continue
+            else:
+                print("[scheduler] TDVP: click-probe failed, trying fallback", flush=True)
+                break
+
+        # fallback: 取候选队列第二个任务
+        queue3 = reconcile_queue(course_key, existing, done_ids, points_map=pts_map)
+        candidates3 = _apply_excluded(queue3, exclude_chapters)
+        if len(candidates3) > 1:
+            second = candidates3[1]
+            rec2 = existing.get(second["task_id"])
+            if rec2 and rec2.chapter_id:
+                print(f"[scheduler] TDVP: fallback to 2nd task: {rec2.task_id}",
+                      flush=True)
+                return rec2.task_id
+
+        print("[scheduler] TDVP: no executable task with chapter_id found", flush=True)
+        return None
+
+    except Exception as e:
+        print(f"[scheduler] TDVP probe failed (non-fatal): {e}", file=sys.stderr)
+        return _fallback_chapter(course_url, course_key,
+                                 exclude_chapters=exclude_chapters)
+
+
+
+def sync_tdvp_on_switch(new_identity, course_url: str) -> None:
+    """课程切换时同步任务登记表（TDVP/E6 清空，新课程从零开始）。
+
+    架构：调度器实际使用的是 app.registry.task_registry（state/registry/<key>/tasks.json）。
+    旧版误写在已弃用的 tvdp_tasks.json，导致切换课程后 e6 registry 残留旧任务。
+    """
+    try:
+        from app.registry.task_registry import save_registry
+        # 清空新课程（即将激活）的任务登记；旧课程 registry 保留作诊断
+        save_registry(new_identity.key(), {})
+    except Exception:
+        pass
+
+
+# 导入 os/Path
+import os
+from pathlib import Path
+
+
+def _chapter_info_for_task(t) -> "object":
+    """为单个 TaskInfo 构造 ChapterInfo（用于 sync_progress_to_course_state）。"""
+    from tvdp.tdvp import ChapterInfo
+    return ChapterInfo(chapter_id=t.chapter_id, title=t.title, tasks=[t])

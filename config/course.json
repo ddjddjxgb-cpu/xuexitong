@@ -1,0 +1,7 @@
+{
+  "_comment": "E5: 课程配置示例。用户只需填写 course_url，其他字段由 Resolver 自动解析。",
+  "_note_1": "个人自用改造：上游此处的真实课程 URL（含 enc/openc 签名参数）已清空。",
+  "_note_2": "重要：当前代码并不读取本文件 —— 实际活跃课程存放在 state/accounts/<账号哈希>/active_course.json。本文件仅作格式示例保留。",
+  "course_url": "",
+  "enabled": false
+}

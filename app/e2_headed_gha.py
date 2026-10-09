@@ -1,0 +1,1838 @@
+"""E2: GitHub Actions Headed Browser Compatibility Verification
+
+验证目标：
+  将本地已 PASS 的 E1.2 浏览器自动化链路（超星 mooc1.chaoxing.com，
+  章节自然播放至 isPassed=true），在 GitHub Actions CI runner 上以
+  "有头浏览器 + Xvfb 虚拟显示" 方式复现。
+
+实验原则（与 E1.2 完全一致）：
+  - 只改变运行环境（本地 → GitHub Actions Ubuntu 24.04）
+  - 不改变任何业务参数
+  - 不直接调用 multimedia/log
+  - 不伪造播放进度
+  - 不重放请求
+  - 不修改 enc / attDurationEnc / otherInfo / _t 等参数
+
+验证项（10 项）：
+  1. 登录成功
+  2. studentstudy 加载
+  3. cards iframe 加载
+  4. 递归进入 ananas video iframe
+  5. video.duration 正常取得
+  6. 真实播放按钮 click
+  7. currentTime 持续增长
+  8. 自然产生 multimedia/log
+  9. 服务端 isPassed=true
+  10. 完成状态独立复核
+
+输出：
+  - CI 环境信息
+  - browser/version
+  - headed/headless 状态
+  - iframe tree
+  - video duration
+  - playback timeline
+  - multimedia/log count
+  - isPassed
+  - post-run verification
+  - failure stage
+  - Evidence Pack (JSON artifact)
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
+
+from playwright.sync_api import sync_playwright
+
+# 使仓库根可导入 —— 本模块既被 app/ 内部 import，也可能作为独立脚本 `python app/e2_headed_gha.py`
+# 运行；从 app/ 独立跑时 repo root 不在 sys.path，需显式挂上才能 `import utils.*`。
+_REPO = Path(__file__).resolve().parent.parent
+for _p in (_REPO, _REPO / "e2"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+
+# ── 课程配置（默认值已清空；一律由 URL / env / CLI 显式提供）────────────
+# 个人自用改造：上游此处的演示课程标识（真实 courseId/clazzid/cpi/enc/chapterId）
+# 已全部清空，避免误用他人课程数据。
+# 生产路径（app/run.py / scheduler）总是显式传入 CourseParams，不依赖这里的默认值；
+# 留空后若无人提供值，引擎会以参数缺失如实失败，而不是悄悄跑别人的课。
+DEMO_COURSE_ID, DEMO_CLAZZ_ID = "", ""
+DEMO_CPI, DEMO_ENC = "", ""
+DEMO_CHAPTER = ""
+
+COURSE_ID  = os.environ.get("COURSE_ID", DEMO_COURSE_ID)
+CLAZZ_ID   = os.environ.get("CLAZZ_ID", DEMO_CLAZZ_ID)
+CPI        = os.environ.get("CPI", DEMO_CPI)
+ENC        = os.environ.get("ENC", DEMO_ENC)
+CHAPTER_ID = os.environ.get("CHAPTER_ID", DEMO_CHAPTER)
+OPENR = os.environ.get("OPENR") or os.environ.get("OPEN_C")    # noqa: N816
+HIDETYPE = os.environ.get("HIDETYPE")
+
+
+def default_params() -> "CourseParams":
+    """从模块级默认构造 CourseParams（仅 standalone / 兜底使用）。
+
+    架构：生产 / scheduler / app.run 一律显式传入 CourseParams，
+    不再依赖 import 后改写模块级全局，避免线程/多 course 状态踩踏。
+    """
+    from models import CourseParams
+    return CourseParams(
+        course_id=COURSE_ID, clazz_id=CLAZZ_ID, cpi=CPI, enc=ENC,
+        chapter_id=CHAPTER_ID, openc=OPENR, hidetype=HIDETYPE,
+    )
+
+
+def parse_course_url(url: str | None) -> dict:
+    """解析超星 studentstudy URL 为参数字典（与 CourseParams.from_url 等价，保留 dict 兼容）。"""
+    if not url:
+        return {}
+    from models import CourseParams
+    return CourseParams.from_url(url).to_dict()
+
+
+def build_base_url(chap_id: str, params: "CourseParams | None" = None) -> str:
+    """构造 studentstudy 页面 URL。
+
+    params 缺省时取模块全局默认（standalone / 兼容旧用法）；
+    生产路径务必显式传入 CourseParams。chapterId 用 chap_id 覆盖。
+    """
+    from models import CourseParams
+    p = params or default_params()
+    return CourseParams(**{**p.to_dict(), "chapter_id": chap_id}).build_base_url()
+
+# 随包只读资源：源码形态 = 仓库 scripts/；冻结形态 = _MEIPASS/scripts/（utils/paths.py）
+from utils.paths import resource_root  # noqa: E402
+from utils.version import app_version, git_sha  # noqa: E402
+
+V3_SCRIPT_PATH = resource_root() / "scripts" / "v3_optimized.user.js"
+
+MAX_PLAY_SECONDS     = 1500   # 25 min timeout
+IS_PASSED_SETTLE_S   = 20
+HEARTBEAT_DEAD_S     = 60
+STATUS_EVERY_S       = 10
+LOGIN_TIMEOUT_S      = 30
+# 章内多视频推进窗口：一段视频ended后给页面留一点时间自动切到「同章节下一个视频」。
+# 若窗口内观察到视频 src 变化（video_count++）就继续播下一段；超时无新 src 则视为
+# 最后一段，此时才判「本章真正完成」。4706 是 8 视频章，缺这个窗口会播完第1段就误退。
+POST_VIDEO_NEXT_WAIT_S = 45
+
+
+# ── 工具函数 ───────────────────────────────────────────────────────
+def log(msg: str):
+    ts = datetime.now(timezone.utc).strftime("%H:%M:%S.%f")[:-3]
+    print(f"[{ts} UTC] {msg}", flush=True)
+
+
+def masked(s: str) -> str:
+    return s[:3] + "****" + s[-4:] if len(s) >= 8 else "***"
+
+
+# ── 播放倍速（个人自用改造）────────────────────────────────────────
+# 上游 v3 脚本把倍速硬编码为 1.5（scripts/v3_optimized.user.js 的 configs）。
+# 本改造把它变为可配置：Python 侧读 XUE_PLAYBACK_RATE → ctx.add_init_script 注入为
+# 页面全局 window.__XUE_PLAYBACK_RATE__ → 脚本侧读取（见 run_test Step B 的注入点）。
+# 默认 2.0：课程教师端已开放 2 倍速，2.0 是平台允许的上限。
+DEFAULT_PLAYBACK_RATE = 2.0
+
+
+def _playback_rate() -> float:
+    """读取 XUE_PLAYBACK_RATE（默认 2.0）；缺失/非法/非正数一律回退 2.0。
+
+    改倍速只需改 .env 里的数字，无需改代码。
+    """
+    raw = (os.environ.get("XUE_PLAYBACK_RATE") or "").strip()
+    if not raw:
+        return DEFAULT_PLAYBACK_RATE
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_PLAYBACK_RATE
+    return v if v > 0 else DEFAULT_PLAYBACK_RATE
+
+
+def _mute_enabled() -> bool:
+    """是否静音播放（XUE_MUTE）。
+
+    个人自用改造：刷课通常不需要声音，故**默认开启静音**；
+    想听声音就设 XUE_MUTE=0（接受 0/false/no/off 任一写法）。
+    """
+    raw = (os.environ.get("XUE_MUTE") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def is_session_kicked(url: str) -> bool:
+    return "detect.chaoxing.com" in url or "i.mooc.chaoxing.com/space" in url
+
+
+# P0-04：isPassed 判定单一真源（服务端返回体 JSON 里的标记）。
+# 提取为纯函数，便于离线回归保护 —— 若超星改字段名/大小写导致判定失效，
+# 本 helper 的回归会红，而不是在真站/CI 里才暴露（二次 fetch / 误判）。
+_IS_PASSED_PATTERNS = ('"isPassed":true',)
+# P0-0：isPassed 布尔解析容忍 whitespace（`"isPassed": true` 带空格），避免超星返回体
+# 排版变化就把真实通过漏判成未测到 → mark_failed → 熔断。key 仍须字面 `isPassed`、
+# 值仍须 JSON boolean `true`（字段漂移如 `{"passed":true}`、`"isPassed":false` 不误命中）。
+_IS_PASSED_RE = re.compile(r'"isPassed"\s*:\s*true')
+
+
+def has_is_passed_marker(body: "str|None") -> bool:
+    """返回体 JSON 是否标 isPassed=true。
+
+    读取的就是"当前运行"首次真实响应（read_event_body，服务端真源），
+    且绑定到本次会话/当前账号的 account（见 P0-1 判定）。判定容忍键/值之间空白。
+    """
+    if not body:
+        return False
+    # 兼容旧精确字面 + 空格容忍；两者同义，保持不外扩字段名/值域。
+    if any(p in body for p in _IS_PASSED_PATTERNS):
+        return True
+    return _IS_PASSED_RE.search(body) is not None
+
+
+def ml_probe_records(events: list) -> list:
+    """探测记录落盘用：保留 url/时刻/状态/响应体（含读体失败痕迹），不再只存一个 count。"""
+    return [{"url": ev.get("url"), "t": ev.get("t"), "status": ev.get("status"),
+             "body": (ev.get("body") or "")[:300], "body_err": ev.get("body_err")}
+            for ev in events]
+
+
+def read_event_body(ev: dict) -> "str|None":
+    """读**首次真实响应**的 body，只读一次并缓存。
+
+    Playwright 的 Response.text() 在响应已被回收时抛错；旧实现把异常静默吞成 None，
+    正是 isPassed_body 恒 null、分不清"没学成/没测到"的成因 → 失败痕迹写进 body_err。
+    """
+    if ev.get("_read"):
+        return ev.get("body")
+    resp = ev.get("resp")
+    if resp is None:
+        ev["_read"] = True
+        return None
+    try:
+        ev["body"] = resp.text()
+    except Exception as e:
+        ev["body"] = None
+        ev["body_err"] = f"ERR:{e}"
+    ev["_read"] = True
+    return ev.get("body")
+
+
+def refetch_requested(env: dict) -> bool:
+    """二次 GET 上报端点属红线，仅在显式开诊断（XUE_DIAG_REFETCH=1）时允许。"""
+    return (env.get("XUE_DIAG_REFETCH") or "").strip() == "1"
+
+
+# ── R-04 自动续播 ─────────────────────────────────────────────
+MAX_RESUME_ATTEMPTS = 12
+RESUME_COOLDOWN_S = 20
+
+
+def should_auto_resume(st: "dict|None", now: float,
+                       last_resume_at: "float|None", resume_count: int,
+                       ended_seen: bool) -> bool:
+    """视频停在 paused 时是否该调 video.play() 续播（R-04）。
+
+    只调用页面自己的 play()，让它继续**自然播放**；不碰 multimedia/log、
+    不改 playingTime/_t/enc —— 那是红线。
+    冷却与总次数上限是为了防跑飞：缓冲中的视频被反复 play() 只会打断加载。
+    """
+    if ended_seen or not st or not st.get("found"):
+        return False
+    if st.get("ended") or not st.get("paused"):
+        return False
+    if (st.get("currentTime") or 0) <= 0:
+        # R-04 只管"续播"，不管"起播"。对 ct=0 的未起播视频调 play() 既越了职责，
+        # 又会把"页面还没开始播"掩盖成"我们已尽力续播"（章 1217304754 即误触发过）。
+        return False
+    if resume_count >= MAX_RESUME_ATTEMPTS:
+        return False
+    if last_resume_at is not None and (now - last_resume_at) < RESUME_COOLDOWN_S:
+        return False
+    return True
+
+
+def resume_paused_video(page, target_objectid: str | None = None) -> bool:
+    """在含 <video> 的那一帧上调用 play()（帧遍历方式与 get_video_state 一致）。
+
+    绑定模式下只对「src 含目标 objectid」的那一帧调 play() —— 对别的点的
+    video 调 play() 等于替非目标点起播（P1 语义：观测与控制必须同一帧）。
+    """
+    try:
+        frames = page.frames
+    except Exception:
+        return False
+    for fr in frames:
+        try:
+            ok = fr.evaluate("""(oid) => {
+                const v = document.querySelector(
+                    'video#video_html5_api, video[id*="video_html5"], video');
+                if (!v || !v.paused) return false;
+                if (oid) {
+                    const src = v.currentSrc || v.src || '';
+                    if (!src || !src.includes(oid)) return false;
+                }
+                v.play();
+                return !v.paused;
+            }""", target_objectid)
+        except Exception:
+            continue
+        if ok:
+            return True
+    return False
+
+
+def set_playback_rate(page, target_objectid: str | None, rate: float,
+                      muted: bool = True) -> bool:
+    """在含 <video> 的那一帧上设置播放倍速**与静音**（帧遍历方式与 resume_paused_video 一致）。
+
+    为什么需要它（上游的一个漏）：
+      `should_inject_v3()` 只在 `video_index < 2` 时注入 v3 脚本（即只有 v3 会给
+      视频设倍速）。当 `video_index >= 2`（章内第 2 段及以后）时引擎不注入 v3，
+      改由 `activate_target_point()` 点击站点自带播放键起播 —— 那条路径上
+      **没有任何代码设置倍速**，视频只会按 1 倍速播完。
+
+    因此本函数是倍速配置的必要补漏：它直接对目标帧的 <video> 元素设置 playbackRate，
+    与 v3 是否注入无关。同时在主循环里节流复调用，防止站点把倍速重置回 1。
+
+    muted=True 时**同时静音**（个人自用改造：刷课不发出声音；由 XUE_MUTE 控制，
+    默认开启）。两项设置在同一次帧遍历里完成，省一次 evaluate。
+
+    绑定模式下只对「src 含目标 objectid」的那一帧设置 —— 与 resume_paused_video
+    同一条 P1 语义：观测与控制必须指向同一帧，绝不替别的视频点改速率。
+    """
+    try:
+        frames = page.frames
+    except Exception:
+        return False
+    for fr in frames:
+        try:
+            ok = fr.evaluate("""(a) => {
+                const oid = a[0], r = a[1], m = a[2];
+                const v = document.querySelector(
+                    'video#video_html5_api, video[id*="video_html5"], video');
+                if (!v) return false;
+                if (oid) {
+                    const src = v.currentSrc || v.src || '';
+                    if (!src || !src.includes(oid)) return false;
+                }
+                if (Math.abs(v.playbackRate - r) > 1e-6) v.playbackRate = r;
+                if (v.muted !== m) v.muted = m;          // 静音（个人自用：刷课不发声）
+                return Math.abs(v.playbackRate - r) < 1e-6 && v.muted === m;
+            }""", [target_objectid, rate, muted])
+        except Exception:
+            continue
+        if ok:
+            return True
+    return False
+
+
+def count_video_points(page) -> int:
+    """统计当前 cards 帧里的视频任务点数（`.ans-insertvideo-online[objectid]`）。
+
+    与 enumerate_video_objectids 同一判据，但只数个数、不做绑定，供快速探测用。
+    """
+    for fr in page.frames:
+        if "knowledge/cards" not in (fr.url or ""):
+            continue
+        try:
+            return int(fr.evaluate(
+                "() => document.querySelectorAll("
+                "'.ans-insertvideo-online[objectid]').length"))
+        except Exception:
+            return 0
+    return 0
+
+
+# 注：早期版本的 `auto_locate_video_card_num()`（只找「第一个含视频的页」）已被
+# 下面的 `locate_video_target()` 取代 —— 当**一个页面有多个视频、且视频跨页分布**时，
+# 前者按页内序号找会选错（拿到别页同序号的点）或选不到（序号超出该页视频数）；
+# 后者按目录顺序跨页累计，与探针产出的 `:videoN`（章内全局序号）语义一致。
+
+
+def locate_video_target(page, index: int = 1,
+                        max_num: int = 8) -> "tuple[int, str | None]":
+    """**跨页**定位章内第 index 个视频点，切到它所在页，返回 (card_num, objectid)。
+
+    为什么必须跨页累计：
+      task_id 的 `:videoN` 是**章内全局序号**，而视频分散在多个 num 页
+      （实测：某章 num=2 有 2 个视频、num=3 有 2 个）。若只在「第一个含视频的页」
+      里按序号找，第 3、4 个视频就会**选错**（拿到别页同序号的点）或**选不到**
+      （序号超出该页视频数）。必须按目录顺序跨页数下去。
+
+    返回 (0, None) 表示整章都没找到视频；找不到时页面停在最后扫描的那页。
+    """
+    from utils.page_ops import switch_card_num as _sw
+
+    seen = 0
+    for num in range(0, max_num + 1):
+        if num > 0:
+            if not _sw(page, num):
+                break
+            page.wait_for_timeout(3500)      # 等新页渲染出任务点
+        for oid in enumerate_video_objectids(page):
+            seen += 1
+            if seen == index:
+                return num, oid
+    return 0, None
+
+
+def switch_card_num(page, num) -> bool:
+    """把 cards iframe 切到指定 num 页（等价于点击对应标签页）。
+
+    为什么需要它（新版课程的结构）：
+      一个 chapterId 下，cards 接口有多个 num 页 ——
+      0=任务导读 / 1=图谱导航 / 2,3=教学资源 / 4=测验习题 / 5=巩固提升 …
+      任务点（含视频）分散在各页里，**页面默认只加载 num=0**，而它通常是
+      纯文字导读，一个任务点都没有 → 引擎会误判「本章无视频」。
+
+      实测（tools/diag_tabs.py、tools/verify_card_switch.py）：点击标签的本质
+      就是把 cards iframe 的 src 换成带对应 num 的 URL，无需模拟点击。
+
+    num<=0 → 不做任何事，返回 True —— 兼容上游单页结构，行为与改造前完全一致。
+
+    返回 True 表示切换动作已发出（不保证内容已渲染，调用方仍需等待）。
+    """
+    try:
+        n = int(num or 0)
+    except (TypeError, ValueError):
+        return True
+    if n <= 0:
+        return True
+    try:
+        moved = page.evaluate("""(n) => {
+            const ifr = document.querySelector('iframe[src*="knowledge/cards"]');
+            if (!ifr) return false;
+            const raw = ifr.getAttribute('src') || '';
+            if (!raw) return false;
+            let neu;
+            if (/[?&]num=\\d+/.test(raw)) {
+                neu = raw.replace(/([?&])num=\\d+/, '$1num=' + n);
+            } else {
+                neu = raw + (raw.indexOf('?') >= 0 ? '&' : '?') + 'num=' + n;
+            }
+            ifr.setAttribute('src', neu);
+            return true;
+        }""", n)
+    except Exception as e:
+        log(f"[cardnum] 切换失败: {type(e).__name__}: {e}")
+        return False
+    if moved:
+        page.wait_for_timeout(2000)      # 给新 cards 帧发起加载
+        log(f"[cardnum] cards iframe 已切到 num={n}")
+    return bool(moved)
+
+
+# ── 视频状态获取（与 e1_2_ch16_v2.py 完全一致）───────────────────
+VIDEO_OID_ENUM_JS = """() => {
+    const seen = new Set();
+    const out = [];
+    document.querySelectorAll('.ans-insertvideo-online[objectid]').forEach(n => {
+        const oid = n.getAttribute('objectid') || '';
+        if (oid && !seen.has(oid)) { seen.add(oid); out.push(oid); }
+    });
+    return out;
+}"""
+
+
+def should_inject_v3(video_index) -> bool:
+    """投章内第 2 个及以后的视频点时**不**注入 v3（纯函数）。
+
+    v3 的 resume 循环挑的是每个模块帧里的第一个 <video>，也就是点 1。对照实测
+    （evidence/target_activation_{with_v3,no_v3}.log）：注入它时目标点被永久钉住
+    （ct 恒 19.8、180s 内 0 次翻转），不注入时点一次它自己的播放键就连播 180s、
+    站点自己上报该 oid。点 1 与未指定段号的稳定链路照旧由 v3 驱动播放。
+    """
+    try:
+        return int(video_index or 1) < 2
+    except (TypeError, ValueError):
+        return True
+
+
+def frame_is_bound_to(src: str, objectid: str) -> bool:
+    """这一帧是不是**目标点**自己（纯函数）。
+
+    P1 的旧病灶就是拿点 1 的帧冒认目标点；激活和观测都必须先过这道身份判定。
+    """
+    if not src or not objectid:
+        return False
+    return objectid in src
+
+
+def navigate_to_video_point(page, objectid: str) -> bool:
+    """章内导航：把目标视频点附件滚进视口中心（点击前的准备动作）。
+
+    真站实证（4738 e2e，用户目视）：滚动是用户级页面操作、无害但**不足以**
+    激活播放器（3 次 ok=True 绑定帧仍 dur=None）；激活靠 activate_target_point
+    的那一次点击，这里只负责把卡片带进视口。oid 只接受 32 位 hex（DOM 属性
+    回注防注入）。
+    """
+    if not objectid or not re.fullmatch(r"[0-9a-fA-F]{32}", objectid):
+        return False
+    try:
+        frames = page.frames
+    except Exception:
+        return False
+    for fr in frames:
+        if "knowledge/cards" not in (fr.url or ""):
+            continue
+        try:
+            if fr.evaluate("""(oid) => {
+                const el = document.querySelector(
+                    '.ans-insertvideo-online[objectid="' + oid + '"]')
+                    || document.querySelector('[objectid="' + oid + '"]');
+                if (!el) return false;
+                el.scrollIntoView({block: 'center'});
+                window.dispatchEvent(new Event('scroll'));
+                return true;
+            }""", objectid):
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def activate_target_point(page, objectid: str) -> bool:
+    """点目标卡自己的 video.js 播放键 —— 目前唯一实测有效的章内激活通道。
+
+    真站对照（同章 4738、同样只点一次）：不注入 v3 时目标点 rs 0→4、dur=1130 到位、
+    ct 20.4→194.1 连播 180s、0 次暂停，点 1 同时安静停在存储位；站点自己发出
+    playingTime/objectId=<目标点> 的进度上报。若页面之后把它暂停，交给已按 objectid
+    绑定目标帧的 R-04 续播（R-04 只管续播，不替它起播）。
+
+    身份判定 = 帧内 <video> 的 src 含该 objectid，绝不去点别人家的播放键；oid 只接受
+    32 位 hex（DOM 属性回注防注入）。
+    """
+    if not objectid or not re.fullmatch(r"[0-9a-fA-F]{32}", objectid):
+        return False
+    try:
+        frames = page.frames
+    except Exception:
+        return False
+    navigate_to_video_point(page, objectid)      # 尽力把卡片滚进视口，成败都不拦点击
+    for fr in frames:
+        try:
+            src = fr.evaluate("""() => {
+                const v = document.querySelector('video');
+                return v ? (v.currentSrc || v.src || '') : '';
+            }""")
+        except Exception:
+            continue
+        if not frame_is_bound_to(src or "", objectid):
+            continue
+        h = fr.query_selector("button[class*='play']")
+        if not h:
+            log(f"[bind] frame bound to {objectid[:8]} but no play button "
+                f"(frame={fr.url[:60]})")
+            return False
+        try:
+            h.scroll_into_view_if_needed(timeout=5000)
+            h.click(timeout=5000)
+        except Exception:
+            try:
+                h.evaluate("el => el.click()")
+            except Exception as e:
+                log(f"[bind] click failed: {type(e).__name__}: {e}")
+                return False
+        log(f"[bind] clicked target {objectid[:8]}'s own play button")
+        return True
+    log(f"[bind] no frame bound to {objectid[:8]} yet")
+    return False
+
+
+def enumerate_video_objectids(page) -> list[str]:
+    """按 DOM 序读 cards 帧里全部视频任务点的 objectid（`:videoN` 的第 N 个）。
+
+    每个视频任务点是 cards 帧里的 `.ans-insertvideo-online[objectid]`，同时
+    存在一个 src 含该 objectid 的 ananas video 帧 —— 这就是「点序号 ↔ 帧」
+    的绑定键（真站 1217304708 只读探针 confirmed：两帧 src 各含
+    19da22cc…/53d6b112…，cards data 里正是这两个 objectid）。
+    无 cards 帧或尚未渲染 → 空列表（调用方在等待循环里重试）。
+    """
+    try:
+        frames = page.frames
+    except Exception:
+        return []
+    for fr in frames:
+        if "knowledge/cards" not in (fr.url or ""):
+            continue
+        try:
+            ids = fr.evaluate(VIDEO_OID_ENUM_JS)
+        except Exception:
+            continue
+        if ids:
+            return list(ids)
+    return []
+
+
+def get_video_state(page, target_objectid: str | None = None) -> dict:
+    """Playwright 原生遍历所有 frames（含跨域/nested iframe）读视频状态。
+
+    旧版用顶层 page.evaluate 逐层按 contentDocument 挖 iframe——一旦目标 <video>
+    落在跨域 or 更深层 iframe，contentDocument 不可达 → 恒 `no_video_in_cards`
+    （如点对点协议PPP 1217304719 在 headed-Xvfb 三连败，3 次 reload 仍找不到）。
+    Playwright 的 page.frames 能枚举并进入跨域/nested frame，对每帧探测 <video>，
+    任一帧有 video 元素即命中（duration 为 null 说明仍在加载，非“无视频”）。
+
+    绑定模式（target_objectid 非空，P1）：只认「<video>.src 含该 objectid」的
+    帧 —— 章内多视频点时页面同时挂多个 video 帧，帧遍历顺序决定观测目标的旧
+    行为会把点 1 的进度当成目标点 2 的（真站 1217304708:video2 实测）。找不到
+    绑定帧时显式报 target_frame_not_found，不拿别的帧冒充。
+    """
+    try:
+        frames = page.frames
+    except Exception as e:
+        return {"found": False, "err": str(e)}
+    if not frames:
+        return {"found": False, "reason": "no_frames"}
+
+    def _probe(fr):
+        try:
+            return fr.evaluate("""() => {
+                const v = document.querySelector(
+                    'video#video_html5_api, video[id*="video_html5"], video');
+                if (!v) return null;
+                return {
+                    currentTime: v.currentTime,
+                    duration: (isFinite(v.duration) && v.duration > 0) ? v.duration : null,
+                    paused: v.paused, readyState: v.readyState,
+                    playbackRate: v.playbackRate, ended: v.ended,
+                    muted: v.muted, volume: v.volume,
+                    // 元数据停滞诊断（feojfe5645 fork 实测：rs=0 需要区分
+                    // 「源加载失败（error/networkState）」和「等待激活」）
+                    errorCode: v.error ? v.error.code : null,
+                    networkState: v.networkState,
+                    src: v.currentSrc || v.src || ''
+                };
+            }""")
+        except Exception:
+            return None
+
+    probes: list[tuple[bool, str, dict]] = []   # (是否 cards 帧, 兜底标签, 探针结果)
+    for fr in frames:
+        st = _probe(fr)
+        if st:
+            label = (fr.url or "").split('/')[-1][:24] or "any"
+            probes.append(("knowledge/cards" in (fr.url or ""), label, st))
+
+    if target_objectid:
+        bound = bind_video_state([st for _, _, st in probes], target_objectid)
+        if bound is not None:
+            return bound
+
+    has_cards = any(is_cards for is_cards, _, _ in probes) or any(
+        ("knowledge/cards" in (f.url or "")) for f in frames)
+
+    # 优先 knowledge/cards 卡片帧里的视频
+    for is_cards, _, st in probes:
+        if is_cards:
+            return {"found": True, "frame": "cards", **st}
+    # 兜底：任一帧含 video 元素（含跨域 video iframe帧）
+    for _, label, st in probes:
+        return {"found": True, "frame": label, **st}
+    if has_cards:
+        return {"found": False, "reason": "no_video_in_cards"}
+    return {"found": False, "reason": "no_cards_frame"}
+
+
+# ── Banner 与侧栏状态 ─────────────────────────────────────────────
+def get_banner(page) -> str | None:
+    try:
+        return page.evaluate("""() => {
+            for (const el of Array.from(document.querySelectorAll('div,p,span'))) {
+                const t = (el.innerText || '').trim();
+                if (t.includes('已学习了') && t.length < 300) return t;
+            }
+            return null;
+        }""")
+    except Exception:
+        return None
+
+
+def get_sidebar(page, cid: str) -> dict | None:
+    try:
+        return page.evaluate("""(cid) => {
+            for (const el of Array.from(document.querySelectorAll('[onclick]'))) {
+                const attr = el.getAttribute('onclick') || '';
+                if (attr.includes(cid)) {
+                    const row = el.closest('li') || el.parentElement;
+                    const numEl = row ? row.querySelector('.jobUnfinishCount') : null;
+                    const ptsEl = row ? row.querySelector('.orangeNew') : null;
+                    return {
+                        unfinish: numEl ? numEl.value : null,
+                        points: ptsEl ? ptsEl.innerText.trim() : null,
+                        row_text: row ? (row.innerText||'').replace(/\\s+/g,' ').trim().slice(0,80) : null
+                    };
+                }
+            }
+            return null;
+        }""", cid)
+    except Exception as e:
+        return {"err": str(e)}
+
+
+# ── 主验证流程 ────────────────────────────────────────────────────
+NextUnitDecision = str  # "none" | "exit_complete" | "exit_switch"
+
+
+def next_unit_decision(nextunit_seen: bool, has_passed: bool, max_ct: float,
+                       ended_seen: bool = False,
+                       initial_duration: float = 0.0,
+                       bound_max_ct: float | None = None) -> str:
+    """完成语义状态机：视频点何时该「本轮推进到完成」并退出（纯函数，可测）。
+
+    完成凭据有两种，都要求是**本轮运行真实观测**到的信号（不是历史持久态）：
+      1. ended_seen=True —— 本轮视频真实播到了末尾（基线 run 34293378209，
+         视频 0→751 真播 ~503s 后 ended_seen=True，服务端登记任务点完成）。
+      2. nextunit_seen + has_passed（方案A，用户确认）—— 本轮在 multimedia/log
+         里真实新到 isPassed=true（passed_object_ids 非空）**且**服务端把 URL
+         自动切到了**另一章**（chapterId 变化）。服务端只在当前任务已 PASS 后
+         才自动续下一章，因此「服务端 auto 切章 + 本轮真实 isPassed」正是该章
+         已完成的服务端真源（P0-04/P0-05 的单一真源原则）。
+
+    这不是老的「33s 假完成」：旧 bug 的 nextUnit 判定用 title/历史进度启发式会
+    误命中，且不要求本轮真实 isPassed；本函数两种完成路径都要求本轮真观测。而
+    has_passed 在引擎侧只在本轮收到 isPassed=true 时才置真（passed_object_ids
+    仅收集本轮响应），nextunit_seen 只在本轮 URL 的 chapterId 变成另一章时置真
+    （该启发式误命中已被移除，见 run_test）。两者齐备才是可靠的「服务端已完成」。
+
+    决策：
+      - ended_seen                              → "exit_complete"（本轮真播完）
+      - nextUnit 已切 + has_passed              → "exit_complete"（方案A：服务端
+            已 auto 进下一章 + 本轮 isPassed → 该章完成）
+      - nextUnit 已切 + 未 passed               → "exit_switch"（真切换、非完成）
+      - 其它（未切 Unit / 未 passed）           → "none"（继续播，等完成信号）
+
+    Options B 绑定（P1）：bound_max_ct 非 None 表示本次 dispatch 绑定到了目标
+    视频点自己的帧。此时 max_ct/initial_duration 只反映绑定帧；绑定帧自身
+    max_ct==0 说明目标点一秒都没播 —— 即使 passed_object_ids 里有 isPassed
+    （那也是别的点——比如点 1——本轮的凭据），也绝不判完成，只判切换。
+    """
+    # 防假完成护栏（锤磊自老事故 run 34332366744）：严禁单凭 max_ct/已知时长/
+    # 历史进度近似「完成」判完成。必须本轮真实读到 ended 或「服务端已切章 + 本轮
+    # isPassed」任一真源；否则宁由外层 watchDog 兜底 TIMEOUT，绝不冒充完成。
+    if ended_seen:
+        return "exit_complete"
+    if not nextunit_seen:
+        return "none"
+    if has_passed and (max_ct > 0 or initial_duration > 0):
+        if bound_max_ct is not None and bound_max_ct <= 0:
+            # P1 护栏：绑定帧（目标点）自身零进度 → isPassed 是别的点的，不判完成
+            return "exit_switch"
+        # 方案A：本轮真实 is_passed + 服务端把 URL 切到另一章（chapterId 变）→
+        # 该章服务端已完成，以此判 exit_complete。要求有实际进度(max_ct>0 或
+        # 已知时长>0)，守住「零进度不判完成」的旧防早切护栏。不再死等旧
+        # video 的 ended_seen——页面已切走、旧视频 ended 永不出现，旧逻辑因此
+        # 死等 900s 看门狗 TIMEOUT（run 34573528666 已实测）。
+        return "exit_complete"
+    return "exit_switch"
+
+
+# ── P0-1：业务结果 vs 观测结果 ─────────────────────────────────────
+# 旧实现用「10/10 全命中」当 PASS（verification_10 把 server isPassed 与 UI 的
+# ended/nextUnit 用 and 绑死），于是「服务器已判过、UI 没看到某个信号」会被误译成
+# FAIL → mark_failed → consecutive_failures++ → BLOCKED（issue #2 根因）。
+# 新判定：业务结果由**服务端 isPassed 真源**主导；UI 观察（ended/nextUnit/时长/ml）
+# 只作诊断、**不参与** server verdict 是否 PASS。
+SERVER_CONFIRMED_PASS = "SERVER_CONFIRMED_PASS"
+SERVER_CONFIRMED_FAIL = "SERVER_CONFIRMED_FAIL"
+INCONCLUSIVE = "INCONCLUSIVE"
+EXECUTION_ERROR = "EXECUTION_ERROR"
+
+
+def business_verdict_from_checks(checks: dict,
+                                 passed_object_ids,
+                                 exec_broken: bool = False) -> str:
+    """P0-1 纯函数：由本轮检查项给出「业务结果」（可离线测，不触发浏览器）。
+
+    语义化结果（与用户 #2 的方案一致）：
+      - server 真源确认通过（本轮真实 isPassed → passed_object_ids 非空 或
+        isPassed_seen）→ SERVER_CONFIRMED_PASS（最高优先级，propagates）。
+      - 否则若执行层基线崩塌（登录/卡片/根本没起播）→ EXECUTION_ERROR。
+      - 否则有执行事实但 server 端未给 isPassed → INCONCLUSIVE
+        （不把「没看到 UI 信号」译成失败）。
+
+    UI 的 ended_seen / nextunit_triggered / banner / 时长 **不进**本判定——它们只属于
+    「我们还观察到了哪些执行证据」，不能覆盖 server verdict。
+    """
+    server_passed = bool(passed_object_ids) or bool((checks or {}).get("isPassed_seen"))
+    if server_passed:
+        return SERVER_CONFIRMED_PASS
+    if exec_broken:
+        return EXECUTION_ERROR
+    return INCONCLUSIVE
+
+
+def target_segment_done(target_vi: int, video_count: int, ended_seen: bool) -> bool:
+    """Options B：本次 dispatch 指定的第 N 段视频是否**真的播完了**。
+
+    `video_count` 是在 `video.src` 变化（即**到达**下一段）时自增的，它表示"现在在第
+    几段"，不表示"第几段已播完"；到达新段时 `ended_seen` 还会被归零。所以"到达即完成"
+    会让 `N>=2` 的 dispatch 刚跳到目标段就退出（P1：真站 4s、`max_ct=0s`、唯一失败项
+    `7_currentTime_growing`）。完成必须以**该段真的 ended** 为准。
+
+    `target_vi=0` 是"自然连播整章"，不参与本判定。
+    """
+    return bool(target_vi) and video_count >= target_vi and ended_seen
+
+
+def pick_target_objectid(video_objectids: list[str], target_vi: int) -> str | None:
+    """Options B：把「第 N 个视频任务点」解析成它的 objectid（纯函数，可测）。
+
+    cards 帧里 `.ans-insertvideo-online[objectid]` 按 DOM 序排列，第 N 个即
+    `:videoN` dispatch 的目标点身份。`target_vi<=0`（自然连播整章）或越界
+    （页面可解析的视频点少于 N）→ None，即不做绑定。
+    """
+    if not target_vi or target_vi < 1 or target_vi > len(video_objectids or []):
+        return None
+    oid = (video_objectids or [])[target_vi - 1]
+    return oid or None
+
+
+def bind_video_state(probes: list[dict] | None,
+                     target_objectid: str | None) -> dict | None:
+    """在逐帧探针结果里选出「<video>.src 含目标 objectid」的那一帧（纯函数）。
+
+    `target_objectid` 为空 → 返回 None（调用方回退旧的无绑定帧遍历顺序）。
+    找不到匹配帧 → 返回 found=False 的显式结果，绝不拿别的帧冒充目标
+    （P1 根因：无绑定时帧顺序决定观测目标，点 1 的 ct=655 被当成点 2 的进度）。
+    """
+    if not target_objectid:
+        return None
+    for st in probes or []:
+        src = (st or {}).get("src") or ""
+        if src and target_objectid in src:
+            return {"found": True, "frame": "bound", **st}
+    return {"found": False, "reason": "target_frame_not_found",
+            "target_objectid": target_objectid}
+
+
+def should_navigate_to_target(target_objectid, bound_dur, stalled_for_s,
+                              nav_attempts, last_nav_at, now,
+                              target_vi: int = 0,
+                              min_stall_s: float = 15.0,
+                              cooldown_s: float = 15.0,
+                              max_attempts: int = 3,
+                              bound_found: bool = True) -> bool:
+    """绑定模式下，何时该主动激活目标播放器（纯函数，可测）。
+
+    真站实证（4738 e2e + C 探测）：cards 页**串行化**任务点 —— 只有页面
+    "当前"播放器由页面驱动，目标点的 video.js 实例存在但不加载
+    （rs=0/dur=None）。绑定解决"看哪一帧"，激活解决"让这一帧轮到播"。
+    条件：绑定播放器没活 + 停滞超阈值 + 冷却已过 + 次数有界。
+
+    范围闸门（2026-10-02 修订，feojfe5645 fork run 37018108922 / 37021228799
+    两次同形实测）：原闸门「仅 :videoN（N≥2）启用」基于"第 1 点本就是页面
+    当前播放器"——但 fork 用户的首个点 1 派发连续两次撞上「帧在但不加载」
+    的串行化停滞（rs=0/dur=None/paused，90s×2 干等后 FAIL），且 reload 不
+    覆盖这种形状（帧在 → stall_s 恒 0）。修订为：**N=1 仅在绑定帧存在且
+    停滞时**同样允许激活（found 由调用方经 bound_found 传入）；帧不在的
+    N=1 仍不激活（完成点无播放器、未推进点激活无意义），阈值/冷却/次数
+    上限照旧 —— 健康链路（metadata 3~20s 内就绪）不会停滞 15s，不受影响。
+    """
+    if not target_objectid:
+        return False
+    if target_vi < 2 and not bound_found:
+        return False
+    if bound_dur:
+        return False
+    if nav_attempts >= max_attempts:
+        return False
+    if last_nav_at is not None and (now - last_nav_at) < cooldown_s:
+        return False
+    return stalled_for_s >= min_stall_s
+
+
+def video_reload_warranted(reason) -> bool:
+    """Step F「无视频帧」里哪些原因值得 reload 整页（纯函数，可测）。
+
+    只保留旧的三种"整章渲染不出视频层"的触发。**target_frame_not_found
+    绝不 reload**：绑定帧不在，要么是该点已被服务端判完成（不再保留播放器，
+    reload 救不回来 —— 708 实测），要么是页面尚未推进到目标点（reload 把页面
+    打回点 1，反而阻碍推进）。这两种都交给 Step F 的预算，耗尽即诚实 FAIL。
+    """
+    return reason in ("no_video_in_cards", "no_cards_doc", "no_cards_frame")
+
+
+def run_test(args, params: "CourseParams | None" = None):
+    """执行浏览器学习验证。
+
+    params: 显式运行参数（课程 + 章节 + openc/hidetype）。缺省时从模块全局默认取，
+            仅用于 E2 standalone；生产 / scheduler / app.run 一律显式传入，
+            避免依赖跨模块改写模块级全局。
+    """
+    from models import CourseParams as _CP
+    # 取一次生效参数：显式优先，否则包一层模块默认（chapter_id 与 args 保持一致）。
+    params = params or default_params()
+    if not params.chapter_id:
+        params.chapter_id = getattr(args, "chapter_id", "") or params.chapter_id
+    evidence: dict = {}
+
+    # ── A. CI 环境信息 ──────────────────────────────────────────────
+    log("=" * 60)
+    log("E2: GitHub Actions Headed Browser Compatibility")
+    log("=" * 60)
+    evidence["meta"] = {
+        "test": "E2_GHA_Headed_Browser_Compat",
+        "github_run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+        "github_run_number": os.environ.get("GITHUB_RUN_NUMBER", "local"),
+        "github_sha": os.environ.get("GITHUB_SHA", "local"),
+        "github_actor": os.environ.get("GITHUB_ACTOR", "local"),
+        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "chapter_id": args.chapter_id,
+        # 本地 exe 没有 GITHUB_SHA，报障时无从判断对方是哪个 build —— 补上
+        # 自报版本（VERSION 文件 + git sha，冻结形态走 _MEIPASS 随包那份）。
+        "app_version": app_version(),
+        "app_git_sha": git_sha(),
+    }
+    evidence["checks"] = {}
+    evidence["errors"] = []
+
+    # 收集系统信息
+    # 注意：这些是 Linux 命令（CI 环境用）。Windows 上既不存在该命令集，且
+    # `text=True` 默认按 locale 解码，在非 ASCII 输出上会抛 UnicodeDecodeError
+    # （实测：异常发生在 subprocess 的 reader 线程里，不致命但污染日志）。
+    # 故：非 Linux 平台直接跳过，其余一律显式 utf-8 + errors=replace。
+    sys_info = {}
+    if os.name == "nt":
+        sys_info["os_release"] = f"Windows ({sys.platform})"
+        sys_info["cpu_count"] = str(os.cpu_count() or "")
+        sys_info["memory"] = "(n/a on Windows)"
+        sys_info["xvfb_pid"] = "(n/a — Windows 无 Xvfb)"
+    else:
+        for label, cmd in [
+            ("os_release",      "cat /etc/os-release"),
+            ("cpu_count",       "nproc"),
+            ("memory",          "free -h"),
+            ("xvfb_pid",        "pgrep -a Xvfb || echo none"),
+        ]:
+            try:
+                r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace", timeout=10)
+                sys_info[label] = r.stdout.strip()
+            except Exception as e:
+                sys_info[label] = f"error: {e}"
+    evidence["ci_environment"] = sys_info
+    log(f"CI OS: {sys_info.get('os_release', '')[:80]}")
+    log(f"Xvfb: {sys_info.get('xvfb_pid', 'none')}")
+
+    # ── B. 启动 headed 浏览器（指定 DISPLAY）───────────────────────
+    display = args.xvfb_display or os.environ.get("DISPLAY", ":99")
+    log(f"DISPLAY={display}")
+
+    with sync_playwright() as p:
+        from utils.browser_factory import launch_kwargs, display_args
+        _lk = launch_kwargs()   # 保存一层，供下方 evidence 如实报告实际使用的浏览器
+        browser = p.chromium.launch(
+            headless=False,
+            **_lk,  # XUE_BROWSER_CHANNEL/XUE_BROWSER_EXE 可配类型，默认 chromium
+            args=[
+                # --display 是 Linux/X11（Xvfb）专用；Windows 上返回空列表、不传该参数。
+                # 见 utils/browser_factory.display_args()（上游此处无条件传，与探针脚本的
+                # 平台区分约定不一致）。
+                *display_args(display),
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-web-security",  # 允许跨域 iframe contentDocument
+                "--disable-site-isolation-trials",
+            ],
+        )
+        ctx = browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            ignore_https_errors=True,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                f"Chrome/{browser.version} Safari/537.36"
+            ),
+        )
+        page = ctx.new_page()
+        # ── 个人自用改造：注入播放倍速 ─────────────────────────────
+        # 把 XUE_PLAYBACK_RATE 暴露为页面全局 window.__XUE_PLAYBACK_RATE__，
+        # 供 v3 脚本读取（scripts/v3_optimized.user.js 的 configs.playbackRate）。
+        # 用 add_init_script 而非改脚本文本：它对该 context 的**每次导航**都生效，
+        # Step F 的无视频 reload 恢复后无需再注入一次。
+        # 注意：这里只覆盖「注入了 v3 的那条路径」；video_index>=2 不注入 v3 时，
+        # 由 set_playback_rate() 直接对目标帧设速率（见 Step F / Step G）。
+        _rate = _playback_rate()
+        try:
+            ctx.add_init_script(f"window.__XUE_PLAYBACK_RATE__ = {_rate};")
+            log(f"[rate] playback rate injected: {_rate}x")
+        except Exception as e:  # 注入失败不应中断学习，如实记录
+            log(f"[rate] inject failed (non-fatal): {e}")
+            evidence.setdefault("errors", []).append(f"rate_inject: {e}")
+        evidence["playback_rate"] = _rate
+        evidence["browser"] = {
+            "headless": False,
+            "channel": _lk.get("channel") or _lk.get("executable_path") or "chromium",
+            "version": browser.version,
+            "display": display,
+            "user_agent": page.evaluate("() => navigator.userAgent"),
+            "webdriver": page.evaluate("() => navigator.webdriver"),
+        }
+        log(f"Browser: chromium {browser.version} (headless=False)")
+
+        # 检查 Xvfb 是否可用（Windows 无 Xvfb —— 跳过，避免每次都记一条无意义错误）
+        if os.name == "nt":
+            evidence["xvfb_status"] = "n/a (Windows)"
+        else:
+            try:
+                xr = subprocess.run(
+                    ["xdpyinfo", "-display", display],
+                    capture_output=True, text=True, timeout=5,
+                    encoding="utf-8", errors="replace",
+                )
+                evidence["xvfb_status"] = "available" if xr.returncode == 0 else f"xr.returncode={xr.returncode}"
+                log(f"Xvfb: {'available' if xr.returncode == 0 else 'UNAVAILABLE'}")
+            except Exception as e:
+                evidence["xvfb_status"] = f"error: {e}"
+                log(f"Xvfb check error: {e}")
+
+        console_msgs = []
+        console_msgs_buffer.clear()
+        page.on("console", lambda msg: (
+            console_msgs.append({"t": time.time(), "type": msg.type, "text": msg.text}),
+            console_msgs_buffer.append({"t": time.time(), "type": msg.type, "text": msg.text})
+        ))
+
+        ml_events = []
+        # 存下 Response 对象本身：稍后在轮询循环里读**首次真实响应体**。
+        # 旧实现只记 url/status，判定改用对该 URL 二次 GET —— 上报端点重复 GET 属红线
+        # 禁止的"重放"，且返回体不保证再含 isPassed（run 35265696173 即 isPassed_body=null）。
+        page.on("response", lambda resp: ml_events.append({
+            "t": time.time(), "url": resp.url, "status": resp.status, "resp": resp
+        }) if "/mooc-ans/multimedia/log" in resp.url and resp.status == 200 else None)
+
+        # ── C. 登录（cookie 优先，无则密码登录）────────────────────
+        log("--- Step C: Login (cookie-first) ---")
+        from utils.cookie_store import ensure_login
+        base = build_base_url(args.chapter_id, params)
+        login_ok = ensure_login(page, ctx,
+                                base, os.environ["CX_USER"], os.environ["CX_PASS"],
+                                login_timeout_s=LOGIN_TIMEOUT_S)
+        evidence["checks"]["login_ok"] = login_ok
+        log(f"Login: ok={login_ok} url={page.url[:80]}")
+
+        if not login_ok:
+            # 显式失败阶段：提前 return 的路径走不到末尾的 _derive_failure_stage，
+            # 不写就是 None → 上层误记 UNREPORTED_BY_RUNTIME，环境级根因被遮蔽
+            evidence["failure_stage"] = "LOGIN_FAILED"
+            evidence["verdict"] = "FAIL(login failed in GHA)"
+            _write(evidence, args.output)
+            browser.close()
+            return evidence
+
+        if is_session_kicked(page.url):
+            evidence["failure_stage"] = "SESSION_KICKED"
+            evidence["verdict"] = "FAIL(session kicked during login)"
+            _write(evidence, args.output)
+            browser.close()
+            return evidence
+
+        # ── D. 前置状态记录 ─────────────────────────────────────────
+        log("--- Step D: Pre-state ---")
+        page.goto(build_base_url(args.chapter_id, params), wait_until="domcontentloaded")
+        page.wait_for_timeout(6000)
+        evidence["checks"]["studentstudy_loaded"] = "studentstudy" in page.url
+        log(f"studentstudy loaded: {evidence['checks']['studentstudy_loaded']}")
+
+        # ── D2. 切到目标卡片页（新版课程的标签页结构）──────────────────
+        # params.card_num = 0 时不做任何事 → 兼容上游单页结构，行为零变化。
+        # 必须发生在任何「读 cards 内容」的动作（枚举视频点 / 等 metadata）之前，
+        # 否则看到的永远是默认页（任务导读，无任务点）。
+        _cnum = int(getattr(params, "card_num", 0) or 0)
+        _vidx = int(getattr(params, "video_index", 0) or 0) or 1
+        if _cnum > 0:
+            _sw = switch_card_num(page, _cnum)
+            evidence["card_num"] = _cnum
+            evidence["checks"]["card_num_switched"] = _sw
+            if _sw:
+                page.wait_for_timeout(3000)   # 等新页渲染出任务点
+            log(f"[cardnum] target={_cnum} switched={_sw}")
+        else:
+            # 自愈：**跨页**定位章内第 _vidx 个视频点，并切到它所在页。
+            # 必须跨页累计 —— 一个章节的视频常分散在多页，且每页可能有多个
+            # （实测：某章 num=2 两个、num=3 两个）。只在第一页按序号找会选错或选不到。
+            # 老结构（默认页即列出视频、无多页）首查即命中 → 不切页，零影响。
+            _num, _oid = locate_video_target(page, _vidx)
+            if _oid:
+                evidence["card_num"] = _num
+                evidence["checks"]["card_num_switched"] = (_num > 0)
+                evidence["target_objectid_hint"] = _oid
+                log(f"[cardnum] 跨页定位：第 {_vidx} 个视频在 num={_num}，"
+                    f"oid={_oid[:12]}…")
+            else:
+                log(f"[cardnum] 未在 num=0..8 内找到视频（第 {_vidx} 个）")
+
+        evidence["banner_before"] = get_banner(page)
+        evidence["sidebar_before"] = get_sidebar(page, args.chapter_id)
+        m_b = re.search(r"已学习了(\d+)", evidence["banner_before"] or "")
+        evidence["banner_learned_before"] = int(m_b.group(1)) if m_b else None
+        log(f"Banner before: 已学习={evidence['banner_learned_before']}")
+        log(f"Sidebar before {args.chapter_id}: {json.dumps(evidence['sidebar_before'], ensure_ascii=False)}")
+
+        # ── E. 注入 v3 脚本 ─────────────────────────────────────────
+        log("--- Step E: Inject v3 ---")
+        script_src = V3_SCRIPT_PATH.read_text(encoding="utf-8")
+        # v3 的 resume 循环驱动的是帧里第一个 video（=点 1），而点 1 在播时站点绝不
+        # 让章内目标点起播 —— 投 :videoN 时它正挡在目标点前面（对照实测见
+        # should_inject_v3）。那条路上起播只靠 activate_target_point 的一次点击。
+        # checks["v3_injected"] 记录的是"v3 按本次分派的设计处理好了"，具体走哪条
+        # 路由 evidence["v3_route"] 说明（10 项检查在两条路上都必须可达 10/10）。
+        inject_v3 = should_inject_v3(getattr(params, "video_index", 0))
+        if not inject_v3:
+            evidence["v3_route"] = "skipped-for-in-chapter-target"
+            evidence["checks"]["v3_injected"] = True
+            log(f"[v3] skipped by design (video_index="
+                f"{getattr(params, 'video_index', 0)})")
+        else:
+            evidence["v3_route"] = "injected"
+            try:
+                page.add_script_tag(content=script_src)
+                log(f"v3 injected ({len(script_src)} bytes)")
+                evidence["checks"]["v3_injected"] = True
+            except Exception as e:
+                evidence["checks"]["v3_injected"] = False
+                evidence.setdefault("errors", []).append(f"v3_inject: {e}")
+                log(f"v3 inject failed: {e}")
+
+        # ── F. 等待视频 metadata（video 帧 flaky → 有界重载恢复）────────
+        log("--- Step F: Wait video metadata (with reload recovery) ---")
+        video_ready = False
+        video_reload_count = 0
+        max_video_reload = 3
+        stall_reload_after_s = 20      # 持续“无视频”秒数阈值 → 触发 reload
+        stall_s = 0                    # 累计“无视频”秒数
+        # Options B 绑定（P1）：把 :videoN 解析成目标点的 objectid，观测/续播/
+        # 时长/完成判定全部只认 src 含该 objectid 的那一帧。
+        target_vi = int(getattr(params, "video_index", 0) or 0)
+        target_objectid = None
+        # 个人自用改造：Step D2 若已**跨页**定位到目标 oid，直接采用，不再走下面
+        # 「拿全局序号 target_vi 在当前页里挑」的路径。
+        # 原因（2026-10-08 实测的死循环）：切到 num=3 后该页只有 2 个点，而全局
+        # 第 3 个视频其实就是**这一页的页内第 1 个** —— 用 3 去那一页挑必然越界
+        # （pick_target_objectid 在 target_vi > len(oids) 时返回 None），于是被判
+        # TARGET_NOT_ON_PAGE → 父层按「幻影点」剪掉记录并纠正快照 → 下一轮探针又
+        # 按跨页口径重建这些点 → 再播再剪，无限循环。
+        _hint = evidence.get("target_objectid_hint")
+        if isinstance(_hint, str) and _hint and target_vi > 0:
+            target_objectid = _hint
+            log(f"[bind] 采用 Step D2 跨页定位命中的目标 oid={_hint[:12]}… "
+                f"（越过「按全局序号 {target_vi} 在当前页挑」的越界陷阱）")
+        # 章内导航（4738 e2e 实证：目标点不在视口 → 页面永不激活其播放器）
+        nav_attempts = 0
+        last_nav_at = None
+        stalled_since = None
+        for i in range(90):
+            try:
+                page.wait_for_timeout(1000)
+            except Exception:
+                break
+            if is_session_kicked(page.url):
+                evidence["failure_stage"] = "SESSION_KICKED"
+                evidence["verdict"] = "FAIL(session-kicked during video-wait)"
+                break
+            if target_vi and target_objectid is None:
+                oids = enumerate_video_objectids(page)
+                if oids:
+                    evidence["video_objectids"] = oids
+                    target_objectid = pick_target_objectid(oids, target_vi)
+                    if target_objectid is None:
+                        # dispatch 指定的点在页面上不存在 —— 诚实失败，绝不
+                        # 拿点 1 的帧冒充目标（P1 旧病灶）
+                        evidence["verdict"] = (
+                            f"FAIL(target video point {target_vi} not on page; "
+                            f"points={len(oids)})")
+                        # 单独一个失败阶段：这不是"播不动"，是**账本要求的序号比页面上
+                        # 实际存在的点还大**。父层据此纠正点级快照并收掉幻影记录，
+                        # 而不是把它记成一次真实播放失败（§4.13：三次撞墙就冻整章）。
+                        evidence["failure_stage"] = "TARGET_NOT_ON_PAGE"
+                        evidence["target_video_index"] = target_vi
+                        evidence["video_points_observed"] = len(oids)
+                        _write(evidence, args.output)
+                        browser.close()
+                        return evidence
+                    evidence["target_objectid"] = target_objectid
+                    log(f"[bind] target video #{target_vi} -> "
+                        f"objectid={target_objectid}")
+            st = get_video_state(page, target_objectid)
+            now_f = time.time()
+            if st.get("found") and st.get("duration"):
+                stalled_since = None
+            elif target_objectid and stalled_since is None:
+                stalled_since = now_f
+            if should_navigate_to_target(
+                    target_objectid, st.get("duration"),
+                    (now_f - stalled_since) if stalled_since else 0.0,
+                    nav_attempts, last_nav_at, now_f, target_vi=target_vi,
+                    bound_found=bool(st.get("found"))):
+                nav_attempts += 1
+                last_nav_at = now_f
+                stalled_since = now_f
+                moved = activate_target_point(page, target_objectid)
+                evidence["target_nav_attempts"] = nav_attempts
+                evidence["target_nav_ok"] = moved
+                log(f"[bind] activate target #{nav_attempts} ok={moved}")
+            dur = st.get("duration")
+            if st.get("found"):
+                stall_s = 0
+                if dur and dur > 0:
+                    evidence["video_duration"] = dur
+                    video_ready = True
+                    evidence["checks"]["cards_has_video"] = True
+                    log(f"Video ready: duration={dur:.0f}s "
+                        f"ct={st.get('currentTime',0):.1f}s rs={st.get('readyState')}")
+                    # 个人自用改造：播放前先设倍速。这条专门覆盖 video_index>=2 的
+                    # 情况 —— 那时 should_inject_v3() 为 False，不走 v3，站方播放器
+                    # 不会自己设倍速（上游此处只 1x 播）。
+                    _r = _playback_rate()
+                    _m = _mute_enabled()
+                    if set_playback_rate(page, target_objectid, _r, muted=_m):
+                        log(f"[rate] playbackRate={_r}x muted={_m} before play")
+                    else:
+                        log("[rate] 未能设上目标帧（非致命）；主循环会继续复核")
+                    break
+            else:
+                reason = st.get("reason") or ""
+                stall_s = (stall_s + 1) if video_reload_warranted(reason) else 0
+                # flaky 恢复：headed-Xvfb 偶发 video iframe 不渲染(no_video_in_cards)。
+                # 持续无视频超阈值 → 有界重载并从 v3 注入，强迫 fresh render，而不是
+                # 原地空转整 90s 就放弃。
+                if stall_s >= stall_reload_after_s:
+                    stall_s = 0
+                    if video_reload_count < max_video_reload:
+                        video_reload_count += 1
+                        evidence["checks"]["video_reload_count"] = video_reload_count
+                        log(f"[recover] no video frame ({reason}); reload page #{video_reload_count}")
+                        try:
+                            page.goto(base, wait_until="domcontentloaded")
+                            page.wait_for_timeout(2000)
+                            if inject_v3:
+                                page.add_script_tag(content=script_src)
+                            page.wait_for_timeout(1500)
+                        except Exception as re_:
+                            log(f"[recover] reload failed: {re_}")
+            if i % 10 == 0:
+                log(f"  waiting ({i+1}s) found={st.get('found')} dur={dur} "
+                    f"rs={st.get('readyState')} paused={st.get('paused')} "
+                    f"err={st.get('errorCode')} net={st.get('networkState')} "
+                    f"reason={st.get('reason')} reloads={video_reload_count}")
+
+        if not video_ready:
+            # video-wait 里被踢会话时 verdict 会被下面这行覆盖成 metadata not
+            # ready —— stage 按真实根因记，别让环境故障伪装成播放故障。
+            evidence["failure_stage"] = ("SESSION_KICKED"
+                                         if is_session_kicked(page.url)
+                                         else "VIDEO_METADATA_NOT_READY")
+            evidence["verdict"] = "FAIL(video metadata not ready in GHA headed)"
+            _write(evidence, args.output)
+            browser.close()
+            return evidence
+
+        # ── G. 主循环：自然播放 ─────────────────────────────────────
+        log("--- Step G: Playback loop (headed GHA) ---")
+        start = time.time()
+        last_ct = 0.0
+        last_status = 0.0
+        max_ct = 0.0
+        last_ct_change_at = start
+        isPassed_seen = False
+        isPassed_at = None
+        ended_seen = False
+        ended_wall = None
+        nextunit_seen = False
+        chapter_completed = False   # 本循环内部判定：当前章已完成并触发了自动跳转
+        ml_parsed = []
+        cur_video_src = ""
+        video_count = 0
+        # 章内多视频：一段 ended 后等待页面自动切下一段的宽限截止时间。
+        #   - 为 None → 不在宽限（根本还没 ended，或已切出新 src）
+        #   - 为绝对值 now+k → 正在宽限窗口内（ended 已见、尚未观察到下一段 src）
+        next_video_deadline = None
+        passed_object_ids = set()
+        # R-04 自动续播计数（进 evidence，供验收与事后归因）
+        recovered_count = 0
+        last_resume_at = None
+        # 个人自用改造：播放倍速 / 静音的目标值与「纠偏节流时间戳」
+        # （站点可能在校验/切段后把 playbackRate 重置回 1、或取消静音，需定期复核）
+        _rate_target = _playback_rate()
+        _mute_target = _mute_enabled()
+        last_rate_fix = 0.0
+        # Options B 绑定：target_vi/target_objectid 已在 Step F 解析（evidence
+        # 里有 video_objectids / target_objectid）。0/None = 自然连播整章。
+        initial_duration = evidence.get("video_duration", 0) or 0  # 记录初始视频总时长
+        summary = {
+            "duration": evidence["video_duration"],
+            "ml_log_count": 0,
+            "final_isPassed": None,
+            "playback_started": None,
+        }
+
+        while time.time() - start < MAX_PLAY_SECONDS:
+            now = time.time()
+            if is_session_kicked(page.url):
+                evidence["failure_stage"] = "SESSION_KICKED"
+                evidence["verdict"] = "FAIL(session kicked during playback)"
+                log("⚠️ Session kicked during playback!")
+                break
+
+            st = get_video_state(page, target_objectid)
+            # 个人自用改造：倍速纠偏（每 STATUS_EVERY_S 复核一次）。
+            # 站点在切段 / 重载后可能把 playbackRate 重置回 1；发现偏离就改回目标值。
+            # 这是「v3 未注入」路径（video_index>=2）倍速生效的唯一保障。
+            if now - last_rate_fix >= STATUS_EVERY_S:
+                last_rate_fix = now
+                _cur_rate = st.get("playbackRate")
+                _cur_muted = st.get("muted")
+                _rate_bad = (_cur_rate is not None
+                             and abs(_cur_rate - _rate_target) > 1e-6)
+                # 只在「目标是静音」时才纠正 muted —— 反过来会把用户主动开的声音按掉
+                _mute_bad = bool(_mute_target) and (_cur_muted is False)
+                if _rate_bad or _mute_bad:
+                    if set_playback_rate(page, target_objectid, _rate_target,
+                                         muted=_mute_target):
+                        log(f"[opts] corrected rate={_cur_rate}->{_rate_target} "
+                            f"muted={_cur_muted}->{_mute_target}")
+            # R-04 自动续播：引擎一直在读 video.paused 却从不处理它 —— 实测整章
+            # 卡在起播几秒处（1217304751 停 ct=8/595、1217304753 停 ct=9/1045）。
+            # 只调页面自己的 play()，仍属"真实浏览器自然播放"，不碰上报链路。
+            if should_auto_resume(st, now, last_resume_at, recovered_count,
+                                  ended_seen):
+                if resume_paused_video(page, target_objectid):
+                    recovered_count += 1
+                    log(f"★ R-04 auto-resume #{recovered_count} "
+                        f"(ct={(st.get('currentTime') or 0):.0f}s paused=True)")
+                else:
+                    log(f"⚠️ R-04 resume 未生效 "
+                        f"(ct={(st.get('currentTime') or 0):.0f}s)")
+                last_resume_at = now   # 成败都记冷却，避免每轮空转重试
+                evidence["recovered_count"] = recovered_count
+
+            if st and st.get("found"):
+                ct = st.get("currentTime") or 0
+                v_src = st.get("src") or ""
+                # 章节内视频任务点切换检测：同一 chapterId 下 video src 变化 = 下一个视频任务点。
+                # 超星章节可含多个视频任务点（页面目录节点后的数字），
+                # 切换时 chapterId 不变，只有 cards iframe 内 video src 变化。
+                if v_src and v_src != cur_video_src:
+                    if cur_video_src:
+                        video_count += 1
+                        log(f"★ Chapter video switch -> #{video_count + 1} "
+                            f"src={v_src[:80]}")
+                    else:
+                        video_count = 1
+                    cur_video_src = v_src
+                    # 重置视频级状态，继续播放新任务点（章内多视频切换）
+                    ended_seen = False
+                    ended_wall = None
+                    next_video_deadline = None
+                    last_ct = 0.0
+                    last_ct_change_at = now
+                    max_ct = 0.0
+                    summary["duration"] = st.get("duration") or summary["duration"]
+                if ct > 0 and not summary["playback_started"]:
+                    summary["playback_started"] = now
+                    log(f"★ Playback started: ct={ct:.1f}s (headed GHA mode)")
+                if ct > 0:
+                    max_ct = max(max_ct, ct)
+                if abs(ct - last_ct) > 0.5:
+                    last_ct = ct
+                    last_ct_change_at = now
+                elif summary.get("duration") and (now - last_ct_change_at) >= HEARTBEAT_DEAD_S:
+                    evidence["failure_stage"] = "HEARTBEAT_DEAD"
+                    log(f"⚠️ Heartbeat dead at ct={ct:.0f}s")
+                    break
+                if st.get("ended") and not ended_seen:
+                    ended_seen = True
+                    ended_wall = now
+                    # 章内多视频：记录「等下一段视频自动切换」的宽限截止时间。
+                    # 若在窗口内观察到 src 变化→ 上面分支已清零并继续播下一段；
+                    # 若窗口耗尽仍无新 src → 判定这是最后一段，可完整退出。
+                    next_video_deadline = now + POST_VIDEO_NEXT_WAIT_S
+                    log(f"★ Video ended: ct={ct:.0f}s "
+                        f"(waiting up to {POST_VIDEO_NEXT_WAIT_S}s for next video)")
+
+            # 消费 multimedia/log
+            for ev in ml_events:
+                existing = [e for e in ml_parsed if e.get("url") == ev["url"]]
+                if existing:
+                    continue
+                entry = {"t": ev["t"], "url": ev["url"], "status": ev.get("status")}
+                try:
+                    q = parse_qs(urlparse(ev["url"]).query)
+                    entry["playingTime"] = q.get("playingTime", [None])[0]
+                    entry["duration_param"] = q.get("duration", [None])[0]
+                    entry["objectId"] = q.get("objectId", [None])[0]
+                    entry["jobid"] = q.get("jobid", [None])[0]
+                except Exception:
+                    pass
+                body = read_event_body(ev)
+                if not body and refetch_requested(os.environ):
+                    # 仅诊断模式：与首次真实响应并排对比，用于判定旧"二次 GET"路径是否假阴性
+                    try:
+                        body = page.evaluate(
+                            """async (u) => {
+                                try { const r = await fetch(u, {method:'GET'}); return await r.text(); }
+                                catch(e) { return 'ERR:'+e.message; }
+                            }""", ev["url"]
+                        )
+                        entry["refetch_body"] = (body or "")[:300]
+                    except Exception:
+                        body = None
+                entry["body"] = (body or "")[:300]
+                ml_parsed.append(entry)
+                if has_is_passed_marker(body):
+                    isPassed_seen = True
+                    isPassed_at = ev["t"]
+                    obj_id = entry.get("objectId")
+                    if obj_id:
+                        passed_object_ids.add(obj_id)
+                    evidence["isPassed_body"] = entry["body"]
+                    log(f"★ isPassed=true! body={entry['body'][:120]}")
+            evidence["ml_log_count"] = len(ml_parsed)
+            evidence["ml_probes"] = ml_probe_records(ml_events)
+
+            if now - last_status >= STATUS_EVERY_S:
+                last_status = now
+                dur = summary["duration"]
+                pct = (max_ct / dur * 100) if dur else 0
+                log(f"[GHA] ct={max_ct:.0f}/{dur if dur else '?'} ({pct:.0f}%) "
+                    f"isPassed={isPassed_seen} ended={ended_seen} "
+                    f"ml={evidence['ml_log_count']} videos={video_count}")
+
+            # nextUnit 检测：只认 URL chapterId 变化（唯一可靠信号）。
+            #   旧版用 .posCatalog_active/.posCatalog_current 标题启发式会误命中"当前章节标题"，
+            #   导致视频刚起播就被误判为"已切换下一章"→ 循环 5s 退出 → max_ct≈0 → isPassed 永远 False。
+            #   彻底移除 title 启发式，避免误判。
+            if not nextunit_seen:
+                ch_match = re.search(r'chapterId=(\d+)', page.url)
+                cur_chap = ch_match.group(1) if ch_match else None
+                if cur_chap and cur_chap != args.chapter_id:
+                    nextunit_seen = True
+                    evidence["nextunit_chapterId"] = cur_chap
+                    evidence["nextunit_url"] = page.url
+                    # 仅作诊断：尝试读取当前页标题（不参与判定）
+                    try:
+                        title_now = page.title()
+                    except Exception:
+                        title_now = None
+                    evidence["nextunit_title"] = title_now
+                    log(f"[GHA] nextUnit (URL chapterId changed): {args.chapter_id} -> {cur_chap}")
+
+            # 绑定模式（P1）：观测只认目标点自己的帧，它的 ended 就是「该段真的
+            # 播完」——不存在「页面还要自动切下一段」的问题（绑定帧的 src 不会
+            # 变成别的点），直接判完成退出，不走宽限期。
+            if target_objectid and ended_seen:
+                log(f"[GHA] bound target video #{target_vi} "
+                    f"(objectid={target_objectid}) ended at ct={max_ct:.0f}s — done")
+                chapter_completed = True
+                break
+
+            # 章内多视频宽限期：一段视频 ended 后，给页面一点时间自动切到「同章节
+            # 下一个视频」。宽限期内绝不判完成/退出——否则像 4706 这种 8 视频章，
+            # 播完第 1 段就以 chapter_completed 退出，视频 2/8..8/8 根本不会被播。
+            # 窗口内若页面自动切换 src，上面 st>0 分支会 video_count++ 并清空
+            # next_video_deadline → 自然继续播下一段；只有窗口耗尽仍无新 src 时，
+            # 才说明「这是最后一段」，此时下面的完成判定才生效。
+            # （绑定模式不进宽限：上一分支已处理目标点 ended。）
+            in_next_video_grace = (
+                not target_objectid
+                and next_video_deadline is not None and now < next_video_deadline
+            )
+
+            if in_next_video_grace:
+                # Options B：本次只做第 target_vi 段，且**该段真的播完**（不是刚跳到）
+                # → 目标段完成，退出，不再等下一段。
+                if target_segment_done(target_vi, video_count, ended_seen):
+                    log(f"[GHA] reached target video #{target_vi} "
+                        f"(video_count={video_count}, ended={ended_seen}) — done")
+                    chapter_completed = True
+                    break
+                if nextunit_seen:
+                    # 宽限内不处理「URL 已切下一章」判定，等下一段 src 或宽限结束。
+                    nextunit_seen = False
+                log(f"[GHA] awaiting next video (ended={ended_seen}, "
+                    f"deadline in {(next_video_deadline - now):.0f}s)")
+                page.wait_for_timeout(2000)
+                continue
+
+            # 退出判定 / 完成语义状态机：见 next_unit_decision（纯函数）。
+            # 走到这里说明：要么根本没 ended，要么宽限期已过、没有切到下一段视频 →
+            # 当前就是最后一段，把它判完成（ended_seen=True）退出。
+            # 绑定模式（P1）：has_passed 收窄为「目标点自己的 objectId 收到了
+            # isPassed」——别的点的凭据不算数；并把绑定帧自身 max_ct 传给护栏，
+            # 绑定帧零进度时方案A 只能判切换、不能判完成。
+            nd = next_unit_decision(
+                nextunit_seen,
+                (target_objectid in passed_object_ids) if target_objectid
+                else bool(passed_object_ids),
+                max_ct,
+                ended_seen=ended_seen,
+                initial_duration=initial_duration,
+                bound_max_ct=max_ct if target_objectid else None)
+            if nd == "exit_complete":
+                # 完成可从两条真源之一触发：
+                #   1) ended_seen=True（本轮视频真实播到末尾，真实推进基线）；
+                #   2) 方案A：本轮 isPassed + 服务端把 URL 切到下一章(chapterId 变)
+                #      → 服务端已 PASS 该章（P0-04 服务端为真源）。
+                # 旧引擎只有(1)，遇长视频+服务端自动切章时旧 video 的 ended 永不
+                # 出现 → 死等 900s 看门狗 TIMEOUT（run 34573528666 实测命中）。
+                log(f"[GHA] chapter complete: ended={ended_seen} "
+                    f"max_ct={max_ct:.0f}/{('%.0f'%initial_duration) if initial_duration else '?'} "
+                    f"{len(passed_object_ids)} passed, nextunit_seen={nextunit_seen} "
+                    f"— done, exiting")
+                chapter_completed = True
+                break
+            if nd == "exit_switch":
+                # chapterId 变了、但未记录到本轮 isPassed → 视为有效切换，退出
+                # （是切换、非完成，不冒充完成）。
+                page.wait_for_timeout(5000)
+                break
+            # 兼容边界：ended 且 95%+ 已知时长但有 passed → 退出（宽限已过，视为最后一段）
+            if ended_seen and passed_object_ids and max_ct > 0 and initial_duration > 0:
+                if (max_ct / initial_duration) >= 0.95:
+                    log(f"Video ended at {max_ct:.0f}/{initial_duration:.0f} "
+                        f"(95%+) with {len(passed_object_ids)} passed — exiting")
+                    break
+
+            page.wait_for_timeout(2000)
+
+        summary["loop_seconds"] = time.time() - start
+        evidence["max_currentTime"] = max_ct
+        evidence["loop_seconds"] = summary["loop_seconds"]
+        evidence["chapter_video_count"] = video_count
+        evidence["passed_object_ids"] = sorted(passed_object_ids)
+        log(f"Playback loop ended: {summary['loop_seconds']:.0f}s "
+            f"max_ct={max_ct:.0f}s videos={video_count}")
+
+        # ── H. 后置复核 ─────────────────────────────────────────────
+        log("--- Step H: Post-verification ---")
+        try:
+            page.goto(build_base_url(args.chapter_id, params), wait_until="domcontentloaded")
+            page.wait_for_timeout(5000)
+            evidence["banner_after"] = get_banner(page)
+            m_a = re.search(r"已学习了(\d+)", evidence["banner_after"] or "")
+            evidence["banner_learned_after"] = int(m_a.group(1)) if m_a else None
+            evidence["sidebar_after"] = get_sidebar(page, args.chapter_id)
+            log(f"Banner after: 已学习={evidence['banner_learned_after']}")
+            log(f"Sidebar after {args.chapter_id}: {json.dumps(evidence['sidebar_after'], ensure_ascii=False)}")
+        except Exception as e:
+            evidence.setdefault("errors", []).append(f"post_recheck: {e}")
+            log(f"Post-recheck failed: {e}")
+
+        # ── I. iframe tree snapshot ─────────────────────────────────
+        log("--- Step I: iframe tree ---")
+        try:
+            iframe_tree = page.evaluate("""() => {
+                const nodes = [];
+                function walk(el, depth) {
+                    if (depth > 5) return;
+                    const src = (el.src || '').slice(0, 120);
+                    let doc = null;
+                    try { doc = el.contentDocument; } catch(e) {}
+                    nodes.push({
+                        depth, src,
+                        hasDoc: !!doc,
+                        videoCnt: doc ? doc.querySelectorAll('video').length : 0,
+                        iframeCnt: doc ? doc.querySelectorAll('iframe').length : 0
+                    });
+                    if (doc) {
+                        doc.querySelectorAll('iframe').forEach(f => walk(f, depth+1));
+                    }
+                }
+                document.querySelectorAll('iframe').forEach(f => walk(f, 0));
+                return nodes;
+            }""")
+            evidence["iframe_tree"] = iframe_tree
+            cards_iframe = next((n for n in iframe_tree if "knowledge/cards" in n.get("src", "")), None)
+            evidence["checks"]["cards_iframe_loaded"] = cards_iframe is not None and cards_iframe.get("hasDoc")
+            # 若 Step F 已在视频 metadata 就绪时确认 cards→ananas→video 递归访问成功，
+            # 这里（nextUnit 切换后采集）不得覆盖该结论；未置位时才用当前 iframe tree 兜底
+            if not evidence["checks"].get("cards_has_video"):
+                evidence["checks"]["cards_has_video"] = cards_iframe and cards_iframe.get("videoCnt", 0) > 0
+            log(f"iframe tree: {len(iframe_tree)} nodes, cards_hasDoc={evidence['checks'].get('cards_iframe_loaded')}, cards_has_video={evidence['checks'].get('cards_has_video')}")
+        except Exception as e:
+            evidence.setdefault("errors", []).append(f"iframe_tree: {e}")
+            log(f"iframe tree error: {e}")
+
+        # ── 诊断：在 browser.close() 前采集，避免 "Event loop is closed" ──
+        # 失败截图在 close() 前拍，成功时的 page 状态也在 close() 前快照
+        if True:
+            try:
+                _capture_diagnostic(page, evidence, tag="at_end")
+            except Exception as e:
+                evidence.setdefault("errors", []).append(f"diag_capture: {e}")
+
+        # ── J. Console 关键日志 ─────────────────────────────────────
+        key_logs = [m for m in console_msgs if any(k in (m.get("text") or "") for k in
+                     ["准备切换到下一小节", "切换到同章节", "播放完成", "开始播放", "安全停止", "headless"])]
+        evidence["key_console"] = key_logs
+
+        browser.close()
+
+    # ── K. 判定 ─────────────────────────────────────────────────────
+    banner_up = ((evidence.get("banner_learned_after") or 0) >
+                 (evidence.get("banner_learned_before") or 0))
+    sidebar_down = False
+    sf = evidence.get("sidebar_before") or {}
+    sa = evidence.get("sidebar_after") or {}
+    if sf.get("unfinish") and sa.get("unfinish"):
+        try:
+            sidebar_down = int(sa["unfinish"]) < int(sf["unfinish"])
+        except (ValueError, TypeError):
+            pass
+
+    checks = {
+        "login_ok": login_ok,
+        "studentstudy_loaded": evidence.get("checks", {}).get("studentstudy_loaded", False),
+        "v3_injected": evidence.get("checks", {}).get("v3_injected", False),
+        "cards_iframe_loaded": evidence.get("checks", {}).get("cards_iframe_loaded", False),
+        "cards_has_video": evidence.get("checks", {}).get("cards_has_video", False),
+        "video_duration_ok": evidence.get("video_duration") and evidence["video_duration"] > 0,
+        "playback_started": summary.get("playback_started") is not None,
+        "max_currentTime": max_ct,
+        "ml_log_count": evidence.get("ml_log_count", 0),
+        "isPassed_seen": isPassed_seen,
+        "isPassed_body": evidence.get("isPassed_body"),
+        "ended_seen": ended_seen,
+        # nextUnit 触发 = URL chapterId 变化。若本章已被判定完成（完成语义
+        # 状态机，chapter_completed=True），则自动跳转视为「下一章已触发」；
+        # 否则（未完成时 URL 变化）视为页面副作用、不当作完成跳转。
+        "nextunit_triggered": nextunit_seen and (not passed_object_ids or chapter_completed),
+        "chapter_completed": chapter_completed,
+        "nextunit_chapterId": evidence.get("nextunit_chapterId"),
+        "nextunit_title": evidence.get("nextunit_title"),
+        "banner_before": evidence.get("banner_learned_before"),
+        "banner_after": evidence.get("banner_learned_after"),
+        "banner_up": banner_up,
+        "sidebar_before": sf.get("unfinish"),
+        "sidebar_after": sa.get("unfinish"),
+        "sidebar_down": sidebar_down,
+        "loop_seconds": summary["loop_seconds"],
+    }
+    evidence["checks"] = checks
+
+    # 10 项验证汇总
+    evidence["verification_10"] = {
+        "1_login_ok": checks["login_ok"],
+        "2_studentstudy_loaded": checks["studentstudy_loaded"],
+        "3_cards_iframe_loaded": checks["cards_iframe_loaded"],
+        "4_recursive_ananas_iframe": checks["cards_has_video"],
+        "5_video_duration_ok": checks["video_duration_ok"],
+        "6_playback_started": checks["playback_started"],
+        "7_currentTime_growing": checks["max_currentTime"] > 0,
+        "8_ml_log_natural": checks["ml_log_count"] > 0,
+        "9_isPassed_true": checks["isPassed_seen"],
+        # 独立复核：1.6 任务点已被 E1.2 持久化完成（banner 无增量），
+        # 因此以「服务端 isPassed=true + 视频自然播完/nextUnit 自动切换」为完成态独立确认
+        "10_post_verification": checks["isPassed_seen"] and (checks["ended_seen"] or checks["nextunit_triggered"]),
+    }
+
+    passed_count = sum(1 for v in evidence["verification_10"].values() if v is True)
+    evidence["passed_count"] = passed_count
+    evidence["total_checks"] = 10
+
+    # ── P0-1 业务结果（server 真源主导）──
+    # 判定依据只取服务端 isPassed 真源；UI 观测(ended/nextUnit/时长/ml)不进业务判定。
+    exec_broken = not (
+        checks.get("login_ok") and checks.get("cards_iframe_loaded")
+        and checks.get("cards_has_video")
+    )
+    business = business_verdict_from_checks(
+        checks, evidence.get("passed_object_ids") or (), exec_broken=exec_broken)
+    evidence["business_verdict"] = business
+    log(f"[P0-1] business_verdict={business} "
+        f"server_passed_obj={len(evidence.get('passed_object_ids') or ())} "
+        f"isPassed_seen={checks.get('isPassed_seen')} "
+        f"ended={checks.get('ended_seen')} nextUnit={checks.get('nextunit_triggered')}")
+
+    # ── 诊断：失败阶段推导（截图已在 close() 前采集）──
+    # 显式 stage（SESSION_KICKED / HEARTBEAT_DEAD / LOGIN_FAILED …）优先 ——
+    # 它们是循环 break 处记下的真实根因，推导函数只看得到终端状态，会把环境
+    # 故障误推成 VIDEO_NOT_COMPLETED 这类"内容味"标签。
+    if passed_count < 10:
+        if not evidence.get("failure_stage"):
+            evidence["failure_stage"] = _derive_failure_stage(evidence)
+        log(f"[diag] failure_stage={evidence['failure_stage']} passed={passed_count}/10")
+    else:
+        evidence["failure_stage"] = None
+        # 成功终态已在 at_end 截图中采集，无需再访问 page（已 close）
+
+    # verdict 字符串仅作 **观测/诊断** 呈现（保留给 CI/人看），不再决定业务 PASS。
+    # 业务 PASS 只看 `business_verdict == SERVER_CONFIRMED_PASS`（见 app/run.py）。
+    if business == SERVER_CONFIRMED_PASS:
+        evidence["verdict"] = (
+            f"PASS (server-confirmed isPassed) — "
+            f"business_verdict={business}, passed_count={passed_count}/10(obs), "
+            f"isPassed=true, nextUnit={'triggered' if nextunit_seen else 'not observed'}"
+        )
+    elif isPassed_seen:
+        evidence["verdict"] = (
+            f"PARTIAL(headed GHA) — isPassed=true but UI signal(s) missed "
+            f"({10 - passed_count} obs checks failed)"
+        )
+    else:
+        evidence["verdict"] = (
+            f"{business} — passed={passed_count}/10(obs), "
+            f"isPassed_seen={isPassed_seen}, max_ct={max_ct:.0f}s"
+        )
+
+    evidence["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+    return evidence
+
+
+def _write(ev: dict, path: str):
+    Path(path).write_text(json.dumps(ev, ensure_ascii=False, indent=2), encoding="utf-8")
+    log(f"Evidence written: {path}")
+
+
+# ── 诊断辅助：失败阶段推导 + 截图 + 结构化上下文 ──────────────────
+def _diag_dir() -> "Path | None":
+    """截图落点：与 evidence 同目录（`<可写根>/evidence/`）。
+
+    原先硬编码 `/tmp/diag_*.png`。Linux runner 上 `/tmp` 正常，但 Windows 把它
+    解析成**当前盘符根目录下的 tmp\\**（实测落在 `D:\\tmp\\`）—— 不在 exe 旁边、
+    不随 evidence 打包、换个盘符路径就对不上，报障的人根本不会想到去那儿找。
+    落在 evidence 下才对：收集脚本拷走 evidence/ 就把截图一并带走，GHA 的
+    `paths: evidence/` 也自然覆盖到。
+
+    目录不可写时返回 None（跳过截图，不影响主流程）。
+    """
+    try:
+        from utils.paths import repo_root
+        d = repo_root() / "evidence"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+    except Exception:
+        return None
+
+
+def _capture_diagnostic(page, evidence: dict, tag: str):
+    """失败时自动截图 + 记录页面 URL/title + video 状态 + 最后 console 消息。"""
+    _dir = _diag_dir()
+    if _dir is not None:
+        try:
+            shot_path = str(_dir / f"diag_{tag}_{int(time.time())}.png")
+            page.screenshot(path=shot_path, full_page=True)
+            evidence.setdefault("diagnostics", {})[tag + "_screenshot"] = shot_path
+            log(f"[diag] screenshot saved: {shot_path}")
+        except Exception as e:
+            evidence.setdefault("errors", []).append(f"diag_screenshot_{tag}: {e}")
+    else:
+        evidence.setdefault("errors", []).append(
+            f"diag_screenshot_{tag}: evidence 目录不可写，跳过截图")
+    try:
+        st = get_video_state(page)
+        evidence.setdefault("diagnostics", {})[tag + "_video_state"] = st
+    except Exception:
+        pass
+    try:
+        evidence.setdefault("diagnostics", {})[tag + "_page_url"] = page.url
+        evidence.setdefault("diagnostics", {})[tag + "_page_title"] = page.title()
+    except Exception:
+        pass
+    # 最后 20 条 console 消息（全文，不截断）
+    try:
+        recent = console_msgs_buffer[-20:] if console_msgs_buffer else []
+        evidence.setdefault("diagnostics", {})[tag + "_console_tail"] = recent
+    except Exception:
+        pass
+
+
+def _derive_failure_stage(evidence: dict) -> str:
+    """从 evidence 精确推导失败发生在哪个阶段，不再靠猜。"""
+    checks = evidence.get("checks", {})
+    if not checks.get("login_ok"):
+        return "LOGIN_FAILED"
+    if not checks.get("studentstudy_loaded"):
+        return "STUDENTSTUDY_NOT_LOADED"
+    if not checks.get("cards_iframe_loaded"):
+        return "NO_CARDS_IFRAME"
+    if not checks.get("cards_has_video"):
+        return "NO_VIDEO_IN_CARDS"
+    if not checks.get("video_duration_ok"):
+        return "VIDEO_DURATION_INVALID"
+    if not checks.get("playback_started"):
+        return "PLAYBACK_NOT_STARTED"
+    max_ct = evidence.get("max_currentTime", 0) or 0
+    dur = evidence.get("video_duration", 0) or 0
+    if max_ct < 1 and not checks.get("isPassed_seen"):
+        # ct 始终≈0 且 isPassed 未 true → 视频未真正起播或 nextUnit 误判提前切走
+        return "PLAYBACK_STALLED"
+    if not checks.get("ml_log_count") or (evidence.get("ml_log_count", 0) == 0):
+        return "NO_MULTIMEDIA_LOG"
+    if not checks.get("isPassed_seen"):
+        # 视频可能没播完（max_ct 远小于 duration）
+        if dur and max_ct < dur * 0.9:
+            return "VIDEO_NOT_COMPLETED"
+        return "ISPASSED_FALSE"
+    if not checks.get("nextunit_triggered") and not checks.get("ended_seen"):
+        return "NO_NEXTUNIT_NO_ENDED"
+    return "UNKNOWN"
+
+
+# 全局 console 缓冲（用于 _capture_diagnostic 取尾部消息）
+console_msgs_buffer = []
+
+
+def main():
+    ap = argparse.ArgumentParser(description="E2: GitHub Actions Headed Browser Compat (product/MVP: --course-url or course params)")
+    ap.add_argument("--course-url", default=os.environ.get("COURSE_URL"),
+                    help="完整 studentstudy URL，含 courseId/clazzid/cpi/enc/chapterId (通用多课程)")
+    ap.add_argument("--course-id", default=None, help="覆盖 courseId")
+    ap.add_argument("--clazz-id",  default=None, help="覆盖 clazzid")
+    ap.add_argument("--cpi",       default=None, help="覆盖 cpi")
+    ap.add_argument("--enc",       default=None, help="覆盖 enc")
+    ap.add_argument("--openc",     default=None, help="覆盖 openc（缺失时 cards iframe 可能不渲染）")
+    ap.add_argument("--hidetype",  default=None, help="覆盖 hidetype（通常为 0）")
+    ap.add_argument("--chapter-id", default=os.environ.get("CHAPTER_ID", DEMO_CHAPTER))
+    ap.add_argument("--output", default="./evidence/evidence_e2.json")
+    ap.add_argument("--xvfb-display", default=None)
+    ap.add_argument("--debug-capture", action="store_true")
+    args = ap.parse_args()
+
+    # 用 course-url 解析出的参数覆盖(优先级: 显式 flag > URL > 常量 > demo)
+    if args.course_url:
+        pc = parse_course_url(args.course_url)
+        args.course_id  = args.course_id  or pc.get("course_id")  or os.environ.get("COURSE_ID", DEMO_COURSE_ID)
+        args.clazz_id   = args.clazz_id   or pc.get("clazz_id")   or os.environ.get("CLAZZ_ID", DEMO_CLAZZ_ID)
+        args.cpi        = args.cpi        or pc.get("cpi")        or os.environ.get("CPI", DEMO_CPI)
+        args.enc        = args.enc        or pc.get("enc")        or os.environ.get("ENC", DEMO_ENC)
+        args.chapter_id = args.chapter_id or pc.get("chapter_id") or DEMO_CHAPTER
+        # openc / hidetype 决定 cards iframe 是否渲染，必须透传
+        args.openc      = args.openc      or pc.get("openc")      or os.environ.get("OPENR")
+        args.hidetype   = args.hidetype   or pc.get("hidetype")   or os.environ.get("HIDETYPE")
+    else:
+        args.course_id  = args.course_id  or os.environ.get("COURSE_ID", DEMO_COURSE_ID)
+        args.clazz_id   = args.clazz_id   or os.environ.get("CLAZZ_ID", DEMO_CLAZZ_ID)
+        args.cpi        = args.cpi        or os.environ.get("CPI", DEMO_CPI)
+        args.enc        = args.enc        or os.environ.get("ENC", DEMO_ENC)
+        args.openc      = args.openc      or os.environ.get("OPENR")
+        args.hidetype   = args.hidetype   or os.environ.get("HIDETYPE")
+
+    # 构造显式 CourseParams 传给 run_test，不再通过改写模块级全局注入。
+    from models import CourseParams
+    run_params = CourseParams(
+        course_id=args.course_id, clazz_id=args.clazz_id, cpi=args.cpi,
+        enc=args.enc, chapter_id=args.chapter_id,
+        openc=args.openc, hidetype=args.hidetype,
+    )
+
+    ev = run_test(args, run_params)
+    _write(ev, args.output)
+    print(json.dumps(ev.get("verification_10", {}), ensure_ascii=False, indent=2))
+    print(f"\nVERDICT: {ev.get('verdict', 'UNKNOWN')}")
+    print(f"PASS COUNT: {ev.get('passed_count')}/10")
+    sys.exit(0 if ev.get("passed_count") == 10 else 1)
+
+
+if __name__ == "__main__":
+    main()

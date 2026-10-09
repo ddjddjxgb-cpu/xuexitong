@@ -1,0 +1,607 @@
+#!/usr/bin/env python3
+"""xuexitong MVP — E5 产品入口 (Initialize / Run / Switch)
+
+E5 升级后支持三种模式：
+
+  1. initialize — 解析课程 URL，创建/初始化课程状态（不执行学习）
+  2. run        — 加载活跃课程状态，执行一次视频学习（默认）
+  3. switch     — 解析新课程 URL，归档旧课程，激活新课程（不执行学习）
+
+用法:
+  # Initialize
+  python app/run.py --action initialize --course-url "..."
+
+  # Run (默认)
+  python app/run.py --course-url "..." --chapter-id 见URL中的chapterId参数
+
+  # Switch
+  python app/run.py --action switch --course-url "..."
+
+输出:
+  - Evidence JSON 到 --output
+  - 课程状态更新到 state/ 目录（跨 Run 持久化）
+  - Actions 日志中打印诊断信息
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+# 复用 e2 已验证的 10 项闭合验证引擎
+_SELF = Path(__file__).resolve().parent.parent
+_E2 = _SELF / "e2"
+if str(_E2) not in sys.path:
+    sys.path.insert(0, str(_E2))
+
+# E5 模块路径（确保 CI 和本地都能导入）
+for _p in [_SELF, _SELF / "resolvers", _SELF / "state", _SELF / "e2"]:
+    _ps = str(_p)
+    if _ps not in sys.path:
+        sys.path.insert(0, _ps)
+
+# UTF-8 输出鲁棒性（与 scripts/ci_local_run.py 同一实现：加固属于进程入口职责）
+from utils.stdio_utf8 import ensure_utf8_stdio  # noqa: E402
+
+ensure_utf8_stdio()
+
+from app.e2_headed_gha import parse_course_url, run_test  # noqa: E402
+from resolvers.course_resolver import resolve_course, detect_course_change  # noqa: E402
+from state.course_state import (  # noqa: E402
+    load_active_course, load_course_state, save_course_state,
+    activate_course, archive_course, initialize_course,
+    run_course as state_run_course,
+    CourseIdentity as StateCourseIdentity, CourseProgress,
+)
+
+
+def _make_state_identity(resolved: dict) -> StateCourseIdentity:
+    """从 resolve_course 结果构建 state 模块的 Identity。"""
+    return StateCourseIdentity(
+        course_id=resolved["course_id"],
+        clazz_id=resolved["clazz_id"],
+        cpi=resolved["cpi"],
+        title=resolved.get("title", f"course_{resolved['course_id']}"),
+        raw_url=resolved.get("raw_url", ""),
+        resolved_at_utc=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _write_output(output: str, data: dict) -> None:
+    """将结果 dict 原子写入 output 路径（evidence）。"""
+    if not output:
+        return
+    try:
+        # <ts> 是 run 模式的时间戳模板；initialize/scheduler 直传时也替换掉，
+        # 否则 Windows 上 `<` 非法文件名会写盘失败（非致命，但丢 evidence）
+        if "<ts>" in output:
+            output = output.replace("<ts>", str(int(time.time())))
+        p = Path(output)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+    except Exception as e:  # pragma: no cover
+        print(f"[!] 无法写入输出文件 {output}: {e}", flush=True)
+
+
+def cmd_initialize(args) -> int:
+    """Initialize: 解析 URL，创建/初始化课程状态。"""
+    print("[initialize] Resolving course URL …", flush=True)
+    result = resolve_course(args.course_url)
+
+    if not result.is_ok():
+        print(f"[initialize] FAILED: {result.error}", flush=True)
+        print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        return 2
+
+    identity = _make_state_identity(result.to_dict()["identity"])
+    state = initialize_course(identity)
+
+    out = {
+        "action": "initialize",
+        "status": "OK",
+        "identity": identity.to_dict(),
+        "state": state.to_dict(),
+        "resolver_evidence": result.evidence,
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    _write_output(args.output, out)
+    return 0
+
+
+def cmd_switch(args) -> int:
+    """Switch: 解析新课程 URL，归档旧课程，激活新课程。"""
+    print("[switch] Resolving new course URL …", flush=True)
+    new_result = resolve_course(args.course_url)
+
+    if not new_result.is_ok():
+        print(f"[switch] FAILED: {new_result.error}", flush=True)
+        return 2
+
+    new_identity = _make_state_identity(new_result.to_dict()["identity"])
+
+    # 检测切换类型
+    active = load_active_course()
+    detection = detect_course_change(args.course_url, active)
+
+    print(f"[switch] Detection: {detection.kind}", flush=True)
+    print(f"[switch] Details: {detection.details}", flush=True)
+
+    # 激活新课程
+    activate_course(new_identity)
+    new_state = load_course_state(new_identity.key())
+
+    out = {
+        "action": "switch",
+        "detection": detection.to_dict(),
+        "new_identity": new_identity.to_dict(),
+        "new_state": new_state.to_dict() if new_state else None,
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    _write_output(args.output, out)
+    return 0
+
+
+def cmd_run(args) -> int:
+    """Run: 加载活跃课程状态，执行视频学习。"""
+    # 解析 URL（用于设置引擎参数）——显式传给引擎，避免依赖模块级全局
+    from models import CourseParams
+    course = parse_course_url(args.course_url)
+    missing = [k for k, v in course.items() if not v]
+    if not course or missing:
+        print(f"[run] 无法解析 URL，缺: {missing}", flush=True)
+        return 2
+
+    chapter = args.chapter_id or course["chapter_id"]
+
+    # 构造显式运行参数（含 openc/hidetype，缺失会导致 no_cards_frame）
+    run_params = CourseParams(
+        course_id=course.get("course_id", ""),
+        clazz_id=course.get("clazz_id", ""),
+        cpi=course.get("cpi", ""),
+        enc=course.get("enc", ""),
+        chapter_id=chapter,
+        openc=course.get("openc"),
+        hidetype=course.get("hidetype") or "0",
+        video_index=getattr(args, "video_index", 0) or 0,
+        card_num=getattr(args, "card_num", 0) or 0,
+    )
+
+    # 加载或初始化课程状态
+    active = load_active_course()
+    if active:
+        identity = _make_state_identity({
+            "course_id": active.course_id,
+            "clazz_id": active.clazz_id,
+            "cpi": active.cpi,
+            "title": active.title,
+            "raw_url": active.raw_url,
+            "resolved_at_utc": active.resolved_at_utc,
+        })
+    else:
+        # 无活跃课程，自动初始化
+        from resolvers.course_resolver import resolve_course as rc
+        r = rc(args.course_url)
+        if not r.is_ok():
+            print(f"[run] 无法解析课程: {r.error}", flush=True)
+            return 2
+        identity = _make_state_identity(r.to_dict()["identity"])
+        initialize_course(identity)
+        active = load_active_course()
+
+    print(f"[run] Active course: {identity.key()}", flush=True)
+
+    # 执行学习
+    out_path = args.output.replace("<ts>", str(int(time.time())))
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
+    eargs = argparse.Namespace(
+        chapter_id=chapter,
+        output=out_path,
+        xvfb_display=args.xvfb_display,
+        debug_capture=False,
+        course_id=course["course_id"],
+        clazz_id=course["clazz_id"],
+        cpi=course["cpi"],
+        enc=course["enc"],
+        video_index=getattr(args, "video_index", 0) or 0,
+    )
+
+    def retryable(evidence: dict) -> bool:
+        """attempt 级重试判定（failure_stage 优先，verdict 兜底）。
+
+        旧实现按 verdict 子串匹配，但引擎的实际 verdict 串早已对不上那些关键词
+        （no_cards_frame/ananas/currentTime 全部失配），--max-attempts 对页面
+        框架类瞬态失败形同虚设。登录/被踢是会话级问题，重试只会再被踢。
+        """
+        ev = evidence or {}
+        stage = str(ev.get("failure_stage") or "").upper()
+        if stage in ("LOGIN_FAILED", "SESSION_KICKED", "CRASH"):
+            return False
+        if stage in ("NO_CARDS_IFRAME", "NO_VIDEO_IN_CARDS",
+                     "STUDENTSTUDY_NOT_LOADED", "VIDEO_METADATA_NOT_READY",
+                     "NO_MULTIMEDIA_LOG"):
+            return True
+        v = str(ev.get("verdict") or "")
+        if "login failed" in v or "session kicked" in v:
+            return False
+        return "video metadata not ready" in v
+
+    max_attempts = max(1, args.max_attempts)
+    t0 = time.time()
+    ev = None
+    retry_count = 0
+    crash_msg = None
+
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            print(f"  retry {attempt-1}/{max_attempts-1} …", flush=True)
+        try:
+            ev = run_test(eargs, run_params)
+        except Exception as e:
+            crash_msg = f"{type(e).__name__}: {e}"
+            print(f"[!] run_test crashed: {crash_msg}", flush=True)
+            ev = ev or {"verdict": "CRASH", "passed_count": 0, "errors": [crash_msg]}
+            # 崩溃也计入重试次数；未达上限时可用剩余 attempts 重试，而非直接放弃
+            if attempt < max_attempts:
+                retry_count += 1
+                continue
+            try:
+                Path(out_path).write_text(
+                    json.dumps({"result": {}, "evidence": ev},
+                              ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+            break
+        v = ev.get("verdict", "")
+        if attempt < max_attempts and retryable(ev):
+            retry_count += 1
+            continue
+        break
+
+    total = time.time() - t0
+    # P0-1（issue #2）：业务 PASS 只认【服务端 isPassed 真源】，不再用「10/10 UI 自检」
+    # 当业务判据。旧逻辑 `passed = passed_count == 10` 会让「服务器判过、UI 没看到信号」
+    # 误译成 FAIL → mark_failed → 熔断 BLOCKED。UI 观测(passed_count)仅作诊断展示。
+    _biz = (ev or {}).get("business_verdict")
+    _server_passed = _biz == "SERVER_CONFIRMED_PASS" or bool(
+        (ev or {}).get("passed_object_ids"))
+    passed = _server_passed
+    exit_code = 0 if passed else 1
+    verdict_str = ("PASS" if passed
+                   else ("DEGRADED" if _biz == "INCONCLUSIVE" and ev
+                         and ev.get("passed_count", 0) >= 6 else "FAIL"))
+    if ev is not None:
+        print(f"[run] business_verdict={_biz} passed_object_ids={len((ev or {}).get('passed_object_ids') or ())} "
+              f"passed_count={ev.get('passed_count')}/10(obs) -> passed={passed}", flush=True)
+
+    # 【E6.1】Postflight: 把 run 结果**写回 registry**（成功/失败都必须写，绝不静默丢失）。
+    #   - PASS → mark_completed（必须带证据）
+    #   - FAIL/DEGRADED/ERROR/TIMEOUT → mark_failed（consecutive_failures+1，达阈值 BLOCKED）
+    # 旧版只写 PASS，失败路径完全不更新 registry → 失败任务卡在 Queue 头部重复执行。
+    if identity and chapter:
+        try:
+            from app.registry.task_registry import (
+                load_registry, save_registry, video_total_from_observation)
+            from app.registry.reconcile import (
+                phantom_correction_policy, prune_phantom_video_points,
+                failure_class_policy)
+            reg = load_registry(identity.key())
+            # E6.2：同一章可有多个视频 task（<chapterId>, <chapterId>:video2, ...）。
+            # 标记「本章第一个尚未完成的 video task」——即本次播放的那个视频点的任务，
+            # 而不是 dict 迭代序里碰到的第一个（那可能是另一条仍待播放的视频任务）。
+            cands = [t for t in reg.values() if getattr(t, "chapter_id", "") == chapter]
+            # Options B：若本次指定了章内视频段（video_index>0），就精确标记对应该段的
+            # video task（video1=<chapter>, videoN=<chapter>:videoN），而不是碰运气取第一个。
+            vi = int(getattr(args, "video_index", 0) or 0)
+            target = None
+            if vi >= 2:
+                want = f"{chapter}:video{vi}"
+                target = reg.get(want)
+            if target is None:
+                target = next((t for t in cands
+                               if getattr(t, "task_type", "video") == "video"
+                               and t.status != "COMPLETED"), None)
+            if target is None:
+                target = next(iter(cands), None)
+            run_id = os.environ.get("GITHUB_RUN_ID", "local")
+            if passed:
+                if target is not None:
+                    passed_obj_ids = ev.get("passed_object_ids", [])
+                    if passed_obj_ids:
+                        target.mark_completed(
+                            run_id=run_id,
+                            evidence_level="SERVER_VERIFIED",
+                            source="isPassed",
+                            detail=f"passed_object_ids={len(passed_obj_ids)}",
+                            passed_object_ids=passed_obj_ids,
+                        )
+                        print(f"[run] Task {chapter} marked SERVER_VERIFIED "
+                              f"(passed_object_ids={len(passed_obj_ids)})", flush=True)
+                    else:
+                        # 无 passed_object_ids 但仍 PASS → 降级为 UI 证据（仍携带 evidence，
+                        # 不适用 URL/nextUnit 推断）。
+                        target.mark_completed(
+                            run_id=run_id,
+                            evidence_level="UI",
+                            source="engine-pass-no-object-ids",
+                            detail="PASS but no passed_object_ids",
+                        )
+                        print(f"[run] Task {chapter} marked UI (no passed_object_ids)",
+                              flush=True)
+                    save_registry(identity.key(), reg)
+            else:
+                # ← FAIL / DEGRADED / ERROR：真正写入 registry（E6.1 核心修复）
+                if target is not None:
+                    failure_stage = str((ev or {}).get("failure_stage", "") or "") \
+                        if ev else ""
+                    detail = str((ev or {}).get("verdict", "") or "")[:200]
+                    adopted = phantom_correction_policy(
+                        failure_stage,
+                        video_index=(ev or {}).get("target_video_index"),
+                        observed_points=(ev or {}).get("video_points_observed"))
+                    if adopted is not None:
+                        # 页面实测只有 N 个点、却要投第 M>N 个 —— 是**账本/快照错**，
+                        # 不是播放失败。记 cf 会让三次撞墙后把整章冻住（§4.13），
+                        # 所以这里改的是账本本身：收掉超范围的幻影点 + 纠正快照的点数。
+                        pruned = prune_phantom_video_points(
+                            reg, chapter_id=target.chapter_id, observed=adopted)
+                        corrected = video_total_from_observation(
+                            identity.key(), target.chapter_id, observed=adopted,
+                            reason=f"engine enumerated {adopted} video point(s) on page")
+                        save_registry(identity.key(), reg)
+                        print(f"[run] PHANTOM target {target.task_id}: page has "
+                              f"{adopted} point(s) -> pruned={sorted(pruned)} "
+                              f"snapshot_corrected={corrected}; 不计 consecutive_failures",
+                              flush=True)
+                    else:
+                        fclass = failure_class_policy(failure_stage, detail)
+                        if fclass == "ENV":
+                            # 环境/会话级失败（登录/被踢/页面框架/崩溃）：不计入
+                            # 章节 consecutive_failures —— BLOCKED 只留给真正
+                            # 「这一章播不动」的证据链，系统级故障不伪装成章节级。
+                            # 任务保持原状，调度器侧按 evidence 走轮级熔断。
+                            print(f"[run] 环境类失败 stage={failure_stage or '?'}"
+                                  f"，不计入章节失败: {detail}", flush=True)
+                        else:
+                            status = target.mark_failed(
+                                run_id=run_id, detail=detail, failure_stage=failure_stage,
+                            )
+                            save_registry(identity.key(), reg)
+                            print(f"[run] Task {target.task_id} marked {status} "
+                                  f"(cf={target.consecutive_failures}/{target.max_attempts}, "
+                                  f"stage={failure_stage or '?'})", flush=True)
+        except Exception as e:
+            print(f"[run] Task registry update failed (non-fatal): {e}",
+                  file=sys.stderr, flush=True)
+
+    # 更新课程状态
+    if identity:
+        state = state_run_course(
+            identity, chapter, passed, total, verdict_str
+        )
+    else:
+        state = None
+
+    res = {
+        "app": "xuexitong-mvp",
+        "action": "run",
+        "target": {"course_url": args.course_url, "chapter_id": chapter},
+        "course_key": identity.key() if identity else None,
+        "env_runner": "github-actions" if "GITHUB_RUN_ID" in os.environ else "local",
+        "timing_s": round(total, 1),
+        "retry_count": retry_count,
+        "exit_code": exit_code,
+        "verdict": verdict_str,
+        "passed_count": ev.get("passed_count") if ev else None,
+        "failure_stage": (ev or {}).get("failure_stage"),
+        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
+        "crash": crash_msg,
+        "evidence_file": out_path,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    final = {"result": res, "evidence": ev or {}}
+    if state:
+        final["course_state"] = state.to_dict()
+
+    Path(out_path).write_text(
+        json.dumps(final, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(json.dumps(res, ensure_ascii=False, indent=2))
+    print(f"Evidence saved: {out_path}")
+    return exit_code
+
+
+def validate_action_secrets(action: str, *, github_actions: bool | None = None) -> "str | None":
+    """run/scheduler 的账号前置校验；返回错误说明（拒绝运行）或 None（放行）。
+
+    fork 审查（2026-10-02）：无 CX_USER 时账号隔离失效，全部读写落到 legacy 裸
+    路径 —— 那是原作者随仓库提交的未 scoped 账本。fork 者忘配 Secrets 会让引擎
+    在原作者的账上跑、失败，还随「Commit state update」提交回去。因此 CI
+    （GITHUB_ACTIONS=true）上 run/scheduler 缺 Secrets 一律拒绝；本地 run 维持
+    既有拒绝，本地 scheduler 放行（离线诊断的合法用途走 legacy 路径）。
+    """
+    missing = ("CX_USER" not in os.environ or "CX_PASS" not in os.environ)
+    if action not in ("run", "scheduler") or not missing:
+        return None
+    if github_actions is None:
+        github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    if github_actions:
+        return ("缺少 Secrets CX_USER / CX_PASS —— 请到仓库 Settings → Secrets and "
+                "variables → Actions 配置（见 README「快速开始」）。无账号时引擎会"
+                "读写仓库自带的 legacy 账本（原作者数据），CI 上拒绝运行。")
+    if action == "run":
+        return "缺少环境变量 CX_USER / CX_PASS。请在 env 或 GitHub Secrets 中设置。"
+    return None
+
+
+def main():
+    # 冻结形态：把 CWD 锚到 exe 旁可写根（utils/paths.py），使 ./evidence 等
+    # 相对路径产物稳定落在 exe 目录，与启动位置无关。源码形态（含 GHA）不 chdir。
+    from utils.paths import is_frozen, repo_root
+    if is_frozen():
+        os.chdir(repo_root())
+
+    ap = argparse.ArgumentParser(
+        description="xuexitong MVP E5: Initialize / Run / Switch course learning"
+    )
+    ap.add_argument("--action", choices=["initialize", "run", "scheduler", "switch", "loop", "gui"],
+                    default=None,
+                    help="操作模式：缺省时源码形态 = run，冻结 exe 双击 = gui 图形界面")
+    ap.add_argument("--course-url", default=None,
+                    help="学习通 studentstudy URL（scheduler 模式下可选，从 state 读取）")
+    ap.add_argument("--chapter-id", default=None,
+                    help="要学习的章节 id（run 模式）")
+    ap.add_argument("--max-chapters", type=int, default=None,
+                    help="scheduler/loop 一轮最多推进的视频任务点数（默认 1；"
+                         "loop 下优先级 CLI > XUE_LOOP_MAX_CHAPTERS > 启动向导 > 1）")
+    ap.add_argument("--output", default="./evidence/run_<ts>.json")
+    ap.add_argument("--max-attempts", type=int, default=2,
+                    help="视频 iframe/metadata 瞬态失败的最大尝试次数（默认 2）")
+    ap.add_argument("--video-index", type=int, default=0,
+                    help="章内视频段序号(1-based)。>1 时本次 run 推进到第 N 段视频并只把该段判完成(逐段视频 dispatch)；0=按自然连播。")
+    ap.add_argument("--card-num", type=int, default=0,
+                    help="卡片页(标签页)序号。新版课程一个章节下 cards 接口有多个 num 页"
+                         "(0=任务导读/2,3=教学资源/…)且默认只加载 num=0；"
+                         "填 2/3 等则先切到该页再读/播任务点。0=不切换(兼容单页结构)。")
+    ap.add_argument("--xvfb-display", default=os.environ.get("DISPLAY", ":99"))
+    ap.add_argument("--interval-minutes", type=int, default=0,
+                    help="loop 模式每轮调度间隔分钟数（默认 30，可用 XUE_LOOP_INTERVAL 覆盖）")
+    ap.add_argument("--trigger", default="manual",
+                    choices=["manual", "schedule"],
+                    help="触发类型（默认 manual）")
+    ap.add_argument("--run-id", default=os.environ.get("GITHUB_RUN_ID", "local"),
+                    help="GitHub run ID（用于记录）")
+    args = ap.parse_args()
+
+    # 双击 exe（无参数）= 打开图形界面；源码/CI 形态缺省仍为 run（GHA 兼容——
+    # run.yml 总是显式传 --action，源码本地调用缺省 = run 与历史一致）
+    if args.action is None:
+        args.action = "gui" if is_frozen() else "run"
+    if args.action != "loop" and args.max_chapters is None:
+        args.max_chapters = 1
+
+    # 校验 Secrets（run/scheduler 需要账号；CI 上缺账号直接拒绝，见函数 docstring）
+    _secret_err = validate_action_secrets(args.action)
+    if _secret_err:
+        print(f"[!] {_secret_err}", file=sys.stderr)
+        sys.exit(2)
+
+    if args.action == "initialize":
+        sys.exit(cmd_initialize(args))
+    elif args.action == "switch":
+        sys.exit(cmd_switch(args))
+    elif args.action == "scheduler":
+        # Scheduler 模式：由 Scheduler 模块决定是否需要执行
+        sys.exit(cmd_scheduler(args))
+    elif args.action == "loop":
+        # 本地常驻模式（app/loop.py）：CLI 形态；GHA 不走此路径。
+        # 退出窗口暂停由 __main__ 的 frozen 守卫统一负责
+        from app.loop import run_loop
+        sys.exit(run_loop(interval_minutes=args.interval_minutes,
+                          max_chapters=args.max_chapters))
+    elif args.action == "gui":
+        # 图形界面（app/gui.py）：双击 exe 的默认入口。
+        # 内部复用 loop 的凭据/课程/时段逻辑与 scheduler 的调度内核，不自建第二套。
+        from app.gui import main as gui_main
+        sys.exit(gui_main())
+    else:
+        sys.exit(cmd_run(args))
+
+
+def cmd_scheduler(args) -> int:
+    """Scheduler 模式：通过 scheduler 模块决定是否执行。"""
+    from scheduler import run_scheduler
+
+    trigger = getattr(args, 'trigger', 'schedule')
+    run_id = getattr(args, 'run_id', os.environ.get('GITHUB_RUN_ID', 'local'))
+    max_chapters = getattr(args, 'max_chapters', 1)
+
+    print(f"[scheduler] Trigger: {trigger}, Run ID: {run_id}, "
+          f"max_chapters: {max_chapters}", flush=True)
+    result = run_scheduler(args.course_url, args.chapter_id or "",
+                          trigger, run_id, max_chapters=max_chapters)
+
+    out = {
+        "action": "scheduler",
+        "decision": result.decision,
+        "result": result.result,
+        "trigger": result.trigger,
+        "course_key": result.course_key,
+        "timing_s": result.timing_s,
+        "verdict": result.verdict,
+        "error": result.error,
+        "chapters_attempted": getattr(result, "chapters_attempted", []),
+        "chapters_failed": getattr(result, "chapters_failed", []),
+        "chapters_timed_out": getattr(result, "chapters_timed_out", []),
+        # E6.1 §11：不得用 scheduler 摘要覆盖底层 runtime evidence。
+        # 这里把 runtime 的 failure_stage / checks / result 一并带出，供 CI 诊断。
+        "evidence": {
+            "failure_stage": getattr(result, "failure_stage", None),
+            "checks": ((getattr(result, "evidence", None) or {}).get("checks")
+                       if isinstance(getattr(result, "evidence", None), dict) else None),
+            "runtime_result": ((getattr(result, "evidence", None) or {}).get("verdict")
+                               if isinstance(getattr(result, "evidence", None), dict) else None),
+            "passed_count": ((getattr(result, "evidence", None) or {}).get("passed_count")
+                             if isinstance(getattr(result, "evidence", None), dict) else None),
+            "run_id": result.run_id,
+        },
+    }
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+
+    # 写入 evidence 文件
+    _write_output(args.output, out)
+
+    # ── 退出语义（issue #3）：不能把 NOOP / BLOCKED 一律当成功（绿）。────
+    #   decision=RUN 且实际执行：按下层 success 判定给 0/1（现有逻辑不变）。
+    #   NOOP：确无剩余可推进工作（课程已完成 / 无 active 课程）→ 0（绿）。
+    #   BLOCKED：调度器主动停摆（连续失败达阈值熔断 / 需人工介入恢复）→ 1（红），
+    #            不得静默绿——CI 需要能从颜色识别"卡死 / 熔断"，而非与 SUCCESS 同色。
+    #   ERROR：解析 / 调度级异常 → 1（红）。
+    # 无论红绿，均已把 reason（result.verdict）与 error 写入上方 out JSON，供人工诊断。
+    print(f"[scheduler] EXIT decision={result.decision} "
+          f"result={result.result} passed={bool(result.passed)} "
+          f"verdict={result.verdict or ''} error={result.error or ''}", flush=True)
+
+    if result.decision == "RUN" and result.result in ("SUCCESS", "FAILED"):
+        return 0 if result.passed else 1
+    if result.decision == "NOOP":
+        return 0  # 确实无可推进工作（课程已完成 / 未配置 active 课程）——绿
+    # BLOCKED / ERROR：非成功状态，返回非 0（红），避免 CI 全绿掩盖"未推进 / 已熔断 / 异常"。
+    print(f"[scheduler] EXIT non-zero for {result.decision} "
+          f"(reason: {result.verdict or result.error or 'unknown'})", flush=True)
+    return 1
+
+
+if __name__ == "__main__":
+    # 调度器派生的 frozen 子进程带 XUE_NO_EXIT_PAUSE=1（scheduler.py 注入）：
+    # 播完必须立即退出供父进程收割，停窗会让看门狗把 PASS 误杀成 TIMEOUT。
+    # GUI 模式（--action gui）自带窗口，退出后不该再要求「按回车关闭」。
+    _argv_gui = any(a == "gui" or a == "--action=gui" for a in sys.argv)
+    if (not getattr(sys, "frozen", False)
+            or os.environ.get("XUE_NO_EXIT_PAUSE")
+            or _argv_gui):
+        main()
+    else:
+        # 冻结产物（双击启动）：任何退出路径（正常/报错/异常）都停窗，
+        # 让用户能看到输出与退出原因；EOF（管道/计划任务）直接放行不阻塞
+        _code = 0
+        try:
+            main()
+        except SystemExit as e:
+            _code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        except BaseException:
+            import traceback
+            traceback.print_exc()
+            _code = 1
+        try:
+            input("\n[exit] 按回车关闭窗口…")
+        except (EOFError, KeyboardInterrupt):
+            pass
+        sys.exit(_code)

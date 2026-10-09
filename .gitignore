@@ -1,0 +1,70 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+e2/__pycache__/
+.pytest_cache/
+.DS_Store
+*.log
+/tmp/*
+!/.github/workflows/
+e3out/
+e6_out/
+/evidence/
+*.tmp
+
+# 安全：绝不把登录 Cookie/会话凭证入库或上传为 artifact
+state/cookies.json
+.cache/
+
+# 运行期推荐文件锁不入库
+*.lock
+
+# 本地环境变量/密钥（即使误存二进制也绝不入库）
+.env
+
+# —— docs/evidence：原始真站抓取含会话 token(enc) / 体积过大，不入库。
+# 其脱敏/裁剪后的最小快照放在 tests/fixtures/（见 fixtures/README）。
+docs/evidence/mooc2_evidence/page.html
+docs/evidence/mooc2_evidence/page.png
+docs/evidence/mooc2_evidence/probe.json
+
+# —— 派生缓存（可由 registry/实时状态随时重算，不入库）——
+# execution_queue: 由 reconcile_queue 从 registry 派生的队列，是 derived cache
+# chapter_points:  点级快照（可再生的缓存；真源是 server end / live DOM）
+state/**/execution_queue.json
+state/registry/execution_queue.json
+state/**/chapter_points.json
+tests/fixtures/_raw_capture/
+
+# —— CI 证据整包快照（曾经在根目录铺 GOs — mvp-evidence-<run>/ 整份 repo 副本，勿再入库）。
+# 只手动收敛有意义的抽样到 docs/evidence/snapshot-archive/（见其 README）。
+e6_*/
+e6_c*/
+mvp-evidence-*/
+tmp_artifacts*/
+tmp_success*/
+evidence_dl/
+
+# —— 本地 exe 打包产物（PyInstaller，Xuexitong.spec 保留版本化）——
+build/
+dist/
+
+# —— 宣传视频工程（Remotion，本地开发用，产物不入库）——
+promo/
+
+# 运行状态（GHA 跨运行持久化，2026-10-09 二次放开）：
+# accounts 下全部 state 入库支撑 determine_action（courses/<key>.json 缺失会 NOOP）。
+# course_identity.raw_url 已本地剥离 enc/openc 签名参数（2026-10-09，签名参数
+# 单独泄漏无害但按最小暴露原则不入库；若 GHA 实测需要，改走 Secrets 注入）。
+# 派生缓存（execution_queue/chapter_points/*.lock）与备份目录仍排除。
+state/active_course.json
+state/courses/
+state/registry/
+state/catalog_map/
+evidence/
+
+# 本地备份目录（我做状态快照时产生，不入库）
+state/_backup_*/
+state/accounts/**/registry/k/

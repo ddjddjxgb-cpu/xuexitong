@@ -1,0 +1,544 @@
+"""Persistent Course State Management
+
+E5 状态管理层。所有状态持久化到仓库 state/ 目录，通过 Git commit 实现
+跨 Run 持久化。
+
+状态文件结构（P0-2 账号隔离，issue #4）:
+    state/
+    ├── active_course.json              # 无登录时的 legacy 活跃课程（离线/诊断）
+    ├── courses/                        #   （legacy，无账号时落回）
+    │   └── <course_id>_<clazz_id>.json
+    └── accounts/
+        └── <account_id>/               # 有登录账号时的隔离命名空间
+            ├── active_course.json
+            ├── courses/
+            │   └── <course_id>_<clazz_id>.json
+            └── registry/               # （task_registry 也锚到同一 <account_id> 子树）
+
+invariant：same course + different account ≠ same state。
+旧版本无账号时直接写 state/courses/ 与 state/registry/<key>/；有账号后全部
+落到 accounts/<account_id>/ 下，旧 legacy 数据**不会被自动绑定成任何账号的 state**
+（操作只在该账号 namespaced 路径，legacy 保持原封不动，仅作为未登录/诊断可见）。
+"account_id" 由登录账号 CX_USER 经确定性哈希得出（models.resolve_account_id）。
+
+安全要求:
+    - 禁止写入 Secrets / Cookie / Session / token
+    - 禁止写入完整敏感请求
+    - artifact 中不泄露凭据
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import tempfile
+import time
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Literal, Optional
+
+# ── 路径常量 ───────────────────────────────────────────────────────
+# repo_root(): 源码形态 = 仓库根（与旧表达式等价）；冻结形态 = exe 旁（utils/paths.py）
+from utils.paths import repo_root  # noqa: E402
+
+REPO_ROOT = repo_root().resolve()
+STATE_DIR = REPO_ROOT / "state"
+COURSES_DIR = STATE_DIR / "courses"
+ACTIVE_FILE = STATE_DIR / "active_course.json"
+
+# ── P0-2：账号隔离 namespace ────────────────────────────────────────
+# 登录账号 CX_USER 存在时，状态按「accounts/<account_id>/」隔离，兑现
+# 「same course + different account ≠ same state」。无登录（测试/离线诊断）→
+# 空 account → 回退旧裸路径（legacy unscoped，向后兼容，既有测试不破）。
+from models import resolve_account_id  # noqa: E402
+
+
+def _account_suffix() -> str:
+    """返回账号子目录名；无账号则为 ''（落回 legacy 裸路径）。"""
+    acc = resolve_account_id()
+    return acc if acc else ""
+
+
+def _courses_root() -> Path:
+    """课程状态目录：有账号 → state/accounts/<acc>/courses，否则 legacy state/courses。"""
+    suffix = _account_suffix()
+    if not suffix:
+        return COURSES_DIR
+    return STATE_DIR / "accounts" / suffix / "courses"
+
+
+def _active_file_path() -> Path:
+    """活跃课程文件：有账号 → state/accounts/<acc>/active_course.json。"""
+    suffix = _account_suffix()
+    if not suffix:
+        return ACTIVE_FILE
+    return STATE_DIR / "accounts" / suffix / "active_course.json"
+
+# 状态目录默认权限（仅当前用户可读写）
+_STATE_DIR_MODE = 0o700
+_STATE_FILE_MODE = 0o600
+
+
+# ── 文件锁（per-course 串行化 read-modify-write）─────────────────────
+# 多个 job（定时 + 手动 + switch）可能并发读写同一课程状态，
+# 用 OS 级别的推荐锁把「read → mutate → write」临界区串行化，避免丢失更新。
+try:
+    import fcntl  # POSIX: GitHub Actions / Linux
+
+    def _lock_exclusive(f):
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+
+    def _unlock(f):
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+except ImportError:  # pragma: no cover - Windows
+    import msvcrt
+
+    def _lock_exclusive(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _unlock(f):
+        try:
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+
+
+class _course_lock:  # noqa: N801 — 头等上下文管理器
+    """推荐文件锁：锁文件 <key>.lock，序列化 RMW。"""
+
+    def __init__(self, identity_key: str, lock_root: Optional[Path] = None):
+        _ensure_dirs()
+        self._path = (lock_root or _courses_root()) / f"{identity_key}.lock"
+        self._fh = None
+
+    def __enter__(self):
+        # 打开/创建锁文件（不截断），申请独占锁
+        self._fh = open(self._path, "a+b")  # noqa: SIM115
+        self._fh.seek(0)
+        _lock_exclusive(self._fh)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self._fh is not None:
+            _unlock(self._fh)
+            self._fh.close()
+            self._fh = None
+        # 锁文件保留（跨 run 复用，避免频繁创建/删除竞态）
+        return False
+
+
+def update_course_state(identity_key: str, updater) -> Optional[CourseState]:
+    """在 per-course 锁内原子执行「读 → 改 → 写」，返回更新后的状态。
+
+    updater: Callable[[Optional[CourseState]], Optional[CourseState]]
+      传入当前状态（None 表示不存在），返回要持久化的新状态或 None（放弃写入）。
+    """
+    with _course_lock(identity_key):
+        state = load_course_state(identity_key)
+        new_state = updater(state)
+        if new_state is not None:
+            save_course_state(new_state)
+        return new_state
+
+
+# ── 类型定义 ───────────────────────────────────────────────────────
+CourseStatus = Literal[
+    "NEW", "ACTIVE", "RUNNING", "PARTIALLY_COMPLETED",
+    "COMPLETED", "ARCHIVED", "ERROR", "BLOCKED"
+]
+
+# 课程身份 —— 统一使用 models.CourseIdentity（单一来源），消除与 resolvers 的重复定义。
+from models import CourseIdentity  # noqa: E402
+
+
+@dataclass
+class CourseProgress:
+    """课程学习进度。"""
+    completed: Optional[int] = None
+    total: Optional[int] = None
+    last_completed_task: Optional[str] = None  # chapter_id
+    active_task: Optional[str] = None  # chapter_id
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CourseProgress":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+# 当前持久化 schema 版本；低于它的旧文件可读（向前兼容），高于则拒绝（向后不兼容）。
+CURRENT_SCHEMA = 1
+
+
+@dataclass
+class CourseState:
+    """单个课程的完整持久化状态。"""
+    schema_version: int = 1
+    course_identity: Optional[CourseIdentity] = None
+    status: CourseStatus = "NEW"
+    progress: Optional[CourseProgress] = None
+    last_run: Optional[str] = None           # ISO UTC
+    last_success: Optional[str] = None       # ISO UTC
+    last_failure: Optional[str] = None       # ISO UTC
+    last_completed_task: Optional[str] = None
+    active_task: Optional[str] = None
+    run_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    history: list[dict] = field(default_factory=list)  # 每次 run 摘要
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CourseState":
+        # 版本守卫：文件 schema 比当前新（未来可能有破坏性变更）→ 拒绝解析，
+        # 由上层捕获后视为「无法读取」并落为 None，避免静默用错字段。
+        if isinstance(d, dict):
+            stored_version = d.get("schema_version", CURRENT_SCHEMA)
+            if isinstance(stored_version, int) and stored_version > CURRENT_SCHEMA:
+                raise ValueError(
+                    f"course state schema v{stored_version} newer than supported "
+                    f"v{CURRENT_SCHEMA}; upgrade the app before reading this state"
+                )
+        ci = d.pop("course_identity", None)
+        prog = d.pop("progress", None)
+        scheduler = d.pop("scheduler", None)
+        state = cls(
+            schema_version=d.pop("schema_version", 1),
+            course_identity=CourseIdentity.from_dict(ci) if ci else None,
+            status=d.pop("status", "NEW"),
+            progress=CourseProgress.from_dict(prog) if prog else None,
+            last_run=d.pop("last_run", None),
+            last_success=d.pop("last_success", None),
+            last_failure=d.pop("last_failure", None),
+            last_completed_task=d.pop("last_completed_task", None),
+            active_task=d.pop("active_task", None),
+            run_count=d.pop("run_count", 0),
+            success_count=d.pop("success_count", 0),
+            failure_count=d.pop("failure_count", 0),
+            history=d.pop("history", []),
+        )
+        if scheduler:
+            state.scheduler = scheduler
+        return state
+
+    def to_dict(self) -> dict:
+        d = {
+            "schema_version": self.schema_version,
+            "status": self.status,
+            "run_count": self.run_count,
+            "success_count": self.success_count,
+            "failure_count": self.failure_count,
+        }
+        if self.course_identity:
+            d["course_identity"] = self.course_identity.to_dict()
+        if self.progress:
+            d["progress"] = self.progress.to_dict()
+        if self.last_run:
+            d["last_run"] = self.last_run
+        if self.last_success:
+            d["last_success"] = self.last_success
+        if self.last_failure:
+            d["last_failure"] = self.last_failure
+        if self.last_completed_task:
+            d["last_completed_task"] = self.last_completed_task
+        if self.active_task:
+            d["active_task"] = self.active_task
+        if self.history:
+            d["history"] = self.history[-50:]  # 保留最近 50 条
+        # E6: scheduler 字段
+        if hasattr(self, 'scheduler') and self.scheduler:
+            d["scheduler"] = self.scheduler
+        return d
+
+
+# ── 公共 API ───────────────────────────────────────────────────────
+
+def _ensure_dirs():
+    """确保状态目录存在。
+
+    权限：课程/状态目录以 0o700（属主私有）创建，避免持默认 umask(0o755)
+    暴露给同机其他用户 —— course_state 可能含活动/诊断数据。POSIX 有效，
+    Windows 上 Path.mkdir 忽略 mode（测试已 skipif win32）。
+    """
+    STATE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    root = _courses_root()
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if root != COURSES_DIR:
+        # 有账号：确保 account 活跃文件所在目录存在
+        _active_file_path().parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+
+def load_active_course() -> Optional[CourseIdentity]:
+    """加载当前活跃课程身份。
+
+    Returns:
+        CourseIdentity 或 None（无活跃课程）
+    """
+    _ensure_dirs()
+    if not _active_file_path().exists():
+        return None
+    try:
+        data = json.loads(_active_file_path().read_text(encoding="utf-8"))
+        key = data.get("active_identity")
+        if not key:
+            return None
+        # 从 key 重建 Identity（不含 title/cpi，需从状态文件补充）
+        parts = key.rsplit("_", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            print(f"[state] Invalid active identity key: {key!r}",
+                  file=sys.stderr)
+            return None
+        course_id, clazz_id = parts
+        cs = load_course_state(key)
+        if cs and cs.course_identity:
+            return cs.course_identity
+        # 降级：返回简化版
+        return CourseIdentity(
+            course_id=course_id, clazz_id=clazz_id,
+            cpi="", title=key, raw_url="",
+            resolved_at_utc=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception as e:
+        print(f"[state] Error loading active course: {e}", file=sys.stderr)
+        return None
+
+
+def load_course_state(identity_key: str) -> Optional[CourseState]:
+    """加载指定课程的状态。
+
+    Args:
+        identity_key: 由 CourseIdentity.key() 生成的 key
+
+    Returns:
+        CourseState 或 None（状态不存在）
+    """
+    _ensure_dirs()
+    state_file = _courses_root() / f"{identity_key}.json"
+    if not state_file.exists():
+        return None
+    try:
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        return CourseState.from_dict(data)
+    except Exception as e:
+        print(f"[state] Error loading state for {identity_key}: {e}",
+              file=sys.stderr)
+        return None
+
+
+def save_course_state(state: CourseState) -> None:
+    """原子保存课程状态。
+
+    使用临时文件 + rename 确保原子性，避免并发写入破坏状态。
+    """
+    _ensure_dirs()
+    if not state.course_identity:
+        raise ValueError("Cannot save state without course_identity")
+
+    key = state.course_identity.key()
+    save_dir = _courses_root()
+    state_file = save_dir / f"{key}.json"
+
+    # 原子写入：先写临时文件再 rename
+    fd, tmp_path = tempfile.mkstemp(
+        suffix=".tmp", prefix="course_state_", dir=save_dir
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+        shutil.move(tmp_path, str(state_file))
+        state_file.chmod(_STATE_FILE_MODE)
+    except Exception:
+        # 清理临时文件
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+
+def activate_course(identity: CourseIdentity) -> None:
+    """设置活跃课程。
+
+    - 更新 active_course.json
+    - 将旧活跃课程标记为 ARCHIVED（如果不同）
+    - 将新课程状态初始化为 ACTIVE
+    """
+    _ensure_dirs()
+
+    old_active = load_active_course()
+    new_key = identity.key()
+
+    # 写活跃标记
+    active_file = _active_file_path()
+    active_data = {"active_identity": new_key,
+                   "activated_at_utc": datetime.now(timezone.utc).isoformat()}
+    fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=active_file.parent)
+    try:
+        # newline 显式：见 save_course_state —— 被 git 跟踪的状态文件不许按平台换行。
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(active_data, f, ensure_ascii=False, indent=2)
+        shutil.move(tmp_path, str(active_file))
+        active_file.chmod(_STATE_FILE_MODE)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+    # 加载或创建新课程状态
+    existing = load_course_state(new_key)
+    if existing:
+        if existing.status == "ARCHIVED":
+            # 从归档恢复
+            existing.status = "ACTIVE"
+            existing.course_identity = identity
+            save_course_state(existing)
+        # 否则保持现有状态（允许继续之前的学习）
+    else:
+        # 新建
+        now_utc = datetime.now(timezone.utc).isoformat()
+        new_state = CourseState(
+            schema_version=1,
+            course_identity=identity,
+            status="ACTIVE",
+            progress=CourseProgress(),
+            last_run=now_utc,
+        )
+        save_course_state(new_state)
+
+    # 归档旧课程（如果不同）
+    if old_active and old_active.key() != new_key:
+        archive_course(old_active)
+
+
+def archive_course(identity: CourseIdentity) -> None:
+    """将课程标记为归档（per-course 锁内 RMW）。"""
+    _ensure_dirs()
+    key = identity.key()
+    with _course_lock(key):
+        state = load_course_state(key)
+        if state and state.status != "ARCHIVED":
+            state.status = "ARCHIVED"
+            save_course_state(state)
+
+
+def update_state_after_run(
+    state: CourseState,
+    passed: bool,
+    timing_s: float,
+    chapter_id: str,
+    verdict: str,
+) -> None:
+    """根据 run 结果更新课程状态。
+
+    Args:
+        state: 当前课程状态
+        passed: 本次 run 是否 PASS 10/10
+        timing_s: 运行耗时
+        chapter_id: 学习的章节 ID
+        verdict: 最终判定字符串
+    """
+    now_utc = datetime.now(timezone.utc).isoformat()
+
+    state.run_count += 1
+    state.last_run = now_utc
+
+    if passed:
+        state.success_count += 1
+        state.failure_count = 0   # 判据写的是"连续失败"，成功不清零就永远是累计值
+        state.last_success = now_utc
+        state.last_completed_task = chapter_id
+        state.active_task = None  # 任务完成，清除活跃任务
+        # 更新进度
+        if state.progress:
+            state.progress.last_completed_task = chapter_id
+            state.progress.active_task = None
+    else:
+        state.failure_count += 1
+        state.last_failure = now_utc
+        state.active_task = chapter_id
+        if state.progress:
+            state.progress.active_task = chapter_id
+
+    # 记录 run 历史摘要
+    state.history.append({
+        "run_at_utc": now_utc,
+        "timing_s": round(timing_s, 1),
+        "passed": passed,
+        "verdict": verdict,
+        "chapter_id": chapter_id,
+    })
+
+    # 更新状态
+    if passed:
+        state.status = "ACTIVE"  # 保持活跃，可能还有更多任务
+    elif state.failure_count >= 3:
+        state.status = "BLOCKED"  # 连续失败多次
+
+    save_course_state(state)
+
+
+def get_courses_list() -> list[dict]:
+    """列出所有课程状态摘要。"""
+    _ensure_dirs()
+    result = []
+    active = load_active_course()
+    active_key = active.key() if active else None
+
+    for f in sorted(_courses_root().glob("*.json")):
+        try:
+            state = CourseState.from_dict(
+                json.loads(f.read_text(encoding="utf-8"))
+            )
+            result.append({
+                "key": state.course_identity.key() if state.course_identity else f.stem,
+                "title": state.course_identity.title if state.course_identity else "?",
+                "course_id": state.course_identity.course_id if state.course_identity else "?",
+                "clazz_id": state.course_identity.clazz_id if state.course_identity else "?",
+                "status": state.status,
+                "run_count": state.run_count,
+                "success_count": state.success_count,
+                "failure_count": state.failure_count,
+                "last_run": state.last_run,
+                "last_success": state.last_success,
+                "is_active": f.stem == active_key,
+            })
+        except Exception as e:
+            result.append({"key": f.stem, "error": str(e)})
+
+    return result
+
+
+# ── 便捷函数 ───────────────────────────────────────────────────────
+
+def initialize_course(identity: CourseIdentity) -> CourseState:
+    """初始化新课程。"""
+    activate_course(identity)
+    return load_course_state(identity.key()) or CourseState(
+        schema_version=1, course_identity=identity, status="ACTIVE"
+    )
+
+
+def run_course(identity: CourseIdentity,
+               chapter_id: str,
+               passed: bool,
+               timing_s: float,
+               verdict: str) -> CourseState:
+    """执行一次课程 run 并更新状态（per-course 锁内原子 read-modify-write）。"""
+    key = identity.key()
+    with _course_lock(key):
+        state = load_course_state(key)
+        if not state:
+            state = CourseState(
+                schema_version=1, course_identity=identity, status="ACTIVE"
+            )
+            save_course_state(state)
+        # update_state_after_run 在末尾 save；此处处于同锁临界区，load→mutate→save 原子。
+        update_state_after_run(state, passed, timing_s, chapter_id, verdict)
+        return state
+
+
+# 导入 sys/os 用于错误输出
+import sys
+import os

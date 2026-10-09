@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "status": "ACTIVE",
+  "run_count": 13,
+  "success_count": 8,
+  "failure_count": 0,
+  "course_identity": {
+    "course_id": "266158447",
+    "clazz_id": "153857464",
+    "cpi": "577777996",
+    "title": "course_266158447",
+    "raw_url": "https://mooc1.chaoxing.com/mycourse/studentstudy?chapterId=1222249861&courseId=266158447&clazzid=153857464&cpi=577777996&mooc2=1&hidetype=0&fanyaVersion=0",
+    "resolved_at_utc": "2026-10-08T10:49:17.610591+00:00",
+    "account_id": ""
+  },
+  "progress": {
+    "completed": 0,
+    "total": 35,
+    "last_completed_task": "1222249900",
+    "active_task": null
+  },
+  "last_run": "2026-10-09T06:15:05.559404+00:00",
+  "last_success": "2026-10-09T06:15:05.559404+00:00",
+  "last_failure": "2026-10-08T15:57:57.213100+00:00",
+  "last_completed_task": "1222249900",
+  "history": [
+    {
+      "run_at_utc": "2026-10-08T11:23:06.093583+00:00",
+      "timing_s": 550.2,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249934"
+    },
+    {
+      "run_at_utc": "2026-10-08T11:31:35.442551+00:00",
+      "timing_s": 261.0,
+      "passed": false,
+      "verdict": "FAIL",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-08T11:38:44.913320+00:00",
+      "timing_s": 167.1,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-08T11:46:50.569798+00:00",
+      "timing_s": 17.6,
+      "passed": false,
+      "verdict": "FAIL",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-08T11:55:53.032190+00:00",
+      "timing_s": 137.7,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-08T14:05:36.985145+00:00",
+      "timing_s": 174.9,
+      "passed": false,
+      "verdict": "DEGRADED",
+      "chapter_id": "1222249920"
+    },
+    {
+      "run_at_utc": "2026-10-08T14:32:28.459651+00:00",
+      "timing_s": 323.3,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249868"
+    },
+    {
+      "run_at_utc": "2026-10-08T15:16:40.247249+00:00",
+      "timing_s": 378.9,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249868"
+    },
+    {
+      "run_at_utc": "2026-10-08T15:38:56.865579+00:00",
+      "timing_s": 41.4,
+      "passed": false,
+      "verdict": "FAIL",
+      "chapter_id": "1222249868"
+    },
+    {
+      "run_at_utc": "2026-10-08T15:57:57.213100+00:00",
+      "timing_s": 351.5,
+      "passed": false,
+      "verdict": "FAIL",
+      "chapter_id": "1222249871"
+    },
+    {
+      "run_at_utc": "2026-10-09T05:24:16.455425+00:00",
+      "timing_s": 340.9,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249871"
+    },
+    {
+      "run_at_utc": "2026-10-09T05:41:24.517279+00:00",
+      "timing_s": 154.3,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249871"
+    },
+    {
+      "run_at_utc": "2026-10-09T06:15:05.559404+00:00",
+      "timing_s": 313.3,
+      "passed": true,
+      "verdict": "PASS",
+      "chapter_id": "1222249900"
+    }
+  ],
+  "scheduler": {
+    "last_scheduled_at": "2026-10-09T06:15:05.814626+00:00",
+    "last_started_at": "2026-10-09T06:15:05.814626+00:00",
+    "last_finished_at": "2026-10-09T06:15:05.817104+00:00",
+    "last_result": "SUCCESS",
+    "last_run_id": "improve-verify",
+    "last_trigger": "manual",
+    "consecutive_failures": 0,
+    "execution_id": "improve-verify",
+    "attempt": 12,
+    "blocked_since": null,
+    "blocked_hits": 0,
+    "blocked_retry_interval": 0
+  }
+}

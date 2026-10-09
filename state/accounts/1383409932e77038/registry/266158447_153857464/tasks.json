@@ -1,0 +1,4868 @@
+{
+  "1222249868:other": {
+    "task_id": "1222249868:other",
+    "chapter_id": "1222249868",
+    "title": "任务1.2 探索信息的数字化表达",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414420+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414424+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414428+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414428+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 2,
+    "_cell_idx": 2,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249871:other": {
+    "task_id": "1222249871:other",
+    "chapter_id": "1222249871",
+    "title": "任务1.3 洞见信息的计算机硬件",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414436+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414438+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414440+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414440+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 3,
+    "_cell_idx": 3,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249875:other": {
+    "task_id": "1222249875:other",
+    "chapter_id": "1222249875",
+    "title": "独立实践项目：了解数字信息与模拟装机训练",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414446+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414449+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414452+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414452+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 4,
+    "_cell_idx": 4,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249878:other": {
+    "task_id": "1222249878:other",
+    "chapter_id": "1222249878",
+    "title": "项目2 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414455+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414457+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414458+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414458+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 5,
+    "_cell_idx": 5,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249900:other": {
+    "task_id": "1222249900:other",
+    "chapter_id": "1222249900",
+    "title": "任务2.1 走近神奇的操作系统",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414464+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414466+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414467+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414467+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 6,
+    "_cell_idx": 6,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249914:other": {
+    "task_id": "1222249914:other",
+    "chapter_id": "1222249914",
+    "title": "任务2.2探秘计算机网络空间",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414470+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414472+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414473+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414473+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 7,
+    "_cell_idx": 7,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249920:other": {
+    "task_id": "1222249920:other",
+    "chapter_id": "1222249920",
+    "title": "独立实践项目：在虚拟机中安装  Windows操作系统",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414476+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414477+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414479+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414479+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 8,
+    "_cell_idx": 8,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249921:other": {
+    "task_id": "1222249921:other",
+    "chapter_id": "1222249921",
+    "title": "项目3 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414482+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414484+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414485+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414485+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 9,
+    "_cell_idx": 9,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249923:other": {
+    "task_id": "1222249923:other",
+    "chapter_id": "1222249923",
+    "title": "任务3.1 掌握 WPS文档编辑排版技法",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414488+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414489+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414490+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414490+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 10,
+    "_cell_idx": 10,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249925:other": {
+    "task_id": "1222249925:other",
+    "chapter_id": "1222249925",
+    "title": "任务3.2 精通 WPS 文字图文混排",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414493+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414494+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414495+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414495+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 11,
+    "_cell_idx": 11,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249927:other": {
+    "task_id": "1222249927:other",
+    "chapter_id": "1222249927",
+    "title": "任务3.3 美化设计WPS文字表格",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414498+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414500+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414502+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414502+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 12,
+    "_cell_idx": 12,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249929:other": {
+    "task_id": "1222249929:other",
+    "chapter_id": "1222249929",
+    "title": "独立实践项目：长文档排版",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414505+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414507+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414508+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414508+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 13,
+    "_cell_idx": 13,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249930:other": {
+    "task_id": "1222249930:other",
+    "chapter_id": "1222249930",
+    "title": "项目4 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414511+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414513+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414514+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414514+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 14,
+    "_cell_idx": 14,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249934:other": {
+    "task_id": "1222249934:other",
+    "chapter_id": "1222249934",
+    "title": "任务4.1 掌握WPS表格的基本操作",
+    "task_type": "other",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T11:23:06.075276+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-08T11:23:06.075276+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "24a40dd721f08050a440d99934350985"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:23:06.075282+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414519+00:00",
+    "updated_at_utc": "2026-10-08T11:23:06.075276+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-08T11:23:06.075276+00:00",
+    "last_started_at": "2026-10-08T11:23:06.075276+00:00",
+    "last_finished_at": "2026-10-08T11:23:06.075276+00:00",
+    "last_success_at_utc": "2026-10-08T11:23:06.075276+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 15,
+    "_cell_idx": 15,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249935:other": {
+    "task_id": "1222249935:other",
+    "chapter_id": "1222249935",
+    "title": "任务4.2 应用公式函数整理表格数据",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414522+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414523+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414524+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414524+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 16,
+    "_cell_idx": 16,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249937:other": {
+    "task_id": "1222249937:other",
+    "chapter_id": "1222249937",
+    "title": "任务4.3 应用图表开展表格数据分析",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414527+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414528+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414529+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414529+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 17,
+    "_cell_idx": 17,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249938:other": {
+    "task_id": "1222249938:other",
+    "chapter_id": "1222249938",
+    "title": "独立项目实践：动态图表数据分析",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414533+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414534+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414536+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414536+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 18,
+    "_cell_idx": 18,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249940:other": {
+    "task_id": "1222249940:other",
+    "chapter_id": "1222249940",
+    "title": "项目5 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414538+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414540+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414541+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414541+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 19,
+    "_cell_idx": 19,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249941:other": {
+    "task_id": "1222249941:other",
+    "chapter_id": "1222249941",
+    "title": "任务5.1 掌握WPS演示文稿基本操作",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414544+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414545+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414546+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414546+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 20,
+    "_cell_idx": 20,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249943:other": {
+    "task_id": "1222249943:other",
+    "chapter_id": "1222249943",
+    "title": "任务5.2 编辑制作并应用幻灯片母版",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414549+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414550+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414551+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414551+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 21,
+    "_cell_idx": 21,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944:other": {
+    "task_id": "1222249944:other",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414554+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414555+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414557+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414557+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249947:other": {
+    "task_id": "1222249947:other",
+    "chapter_id": "1222249947",
+    "title": "独立项目实践：公司汇报演示文稿",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414559+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414561+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414562+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414562+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 23,
+    "_cell_idx": 23,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249949:other": {
+    "task_id": "1222249949:other",
+    "chapter_id": "1222249949",
+    "title": "项目6 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414565+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414566+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414568+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414568+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 24,
+    "_cell_idx": 24,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249951:other": {
+    "task_id": "1222249951:other",
+    "chapter_id": "1222249951",
+    "title": "任务6.1 驾驭日常信息搜索技巧",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414570+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414572+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414573+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414573+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 25,
+    "_cell_idx": 25,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249952:other": {
+    "task_id": "1222249952:other",
+    "chapter_id": "1222249952",
+    "title": "1、回顾内容：信息检索与调研",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414576+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414577+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414579+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414579+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 26,
+    "_cell_idx": 26,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249956:other": {
+    "task_id": "1222249956:other",
+    "chapter_id": "1222249956",
+    "title": "任务6.3 筑牢信息安全防护屏障",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414581+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414582+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414584+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414584+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 27,
+    "_cell_idx": 27,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249958:other": {
+    "task_id": "1222249958:other",
+    "chapter_id": "1222249958",
+    "title": "任务6.4 遵守信息法律法规与伦理规范",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414587+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414588+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414590+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414590+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 28,
+    "_cell_idx": 28,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249960:other": {
+    "task_id": "1222249960:other",
+    "chapter_id": "1222249960",
+    "title": "独立实践项目：信息赋能生活",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414593+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414594+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414596+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414596+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 29,
+    "_cell_idx": 29,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249961:other": {
+    "task_id": "1222249961:other",
+    "chapter_id": "1222249961",
+    "title": "项目7 导入",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414598+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414600+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414601+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414601+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 30,
+    "_cell_idx": 30,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249964:other": {
+    "task_id": "1222249964:other",
+    "chapter_id": "1222249964",
+    "title": "任务7.1 概览新一代信息技术",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414603+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414605+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414606+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414606+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 31,
+    "_cell_idx": 31,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249968:other": {
+    "task_id": "1222249968:other",
+    "chapter_id": "1222249968",
+    "title": "任务7.2 走进大数据技术",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414654+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414666+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414673+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414673+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 32,
+    "_cell_idx": 32,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249971:other": {
+    "task_id": "1222249971:other",
+    "chapter_id": "1222249971",
+    "title": "任务7.3 探秘人工智能技术",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414689+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414695+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414702+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414702+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 33,
+    "_cell_idx": 33,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249974:other": {
+    "task_id": "1222249974:other",
+    "chapter_id": "1222249974",
+    "title": "独立实践项目：逻辑回归模型---泰坦尼克乘客生存分析",
+    "task_type": "other",
+    "status": "PENDING",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T10:52:16.414716+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T10:52:16.414722+00:00"
+    },
+    "created_at_utc": "2026-10-08T10:52:16.414725+00:00",
+    "updated_at_utc": "2026-10-08T10:52:16.414725+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 34,
+    "_cell_idx": 34,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249920": {
+    "task_id": "1222249920",
+    "chapter_id": "1222249920",
+    "title": "独立实践项目：在虚拟机中安装  Windows操作系统",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T11:38:44.898099+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-08T11:38:44.898099+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "c8b12fc9df594eb109adfa7c3f826ff3"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:38:44.898105+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.267957+00:00",
+    "updated_at_utc": "2026-10-08T11:38:44.898099+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-08T11:38:44.898099+00:00",
+    "last_started_at": "2026-10-08T11:38:44.898099+00:00",
+    "last_finished_at": "2026-10-08T11:38:44.898099+00:00",
+    "last_success_at_utc": "2026-10-08T11:38:44.898099+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 8,
+    "_cell_idx": 8,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249920:video2": {
+    "task_id": "1222249920:video2",
+    "chapter_id": "1222249920",
+    "title": "独立实践项目：在虚拟机中安装  Windows操作系统",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T11:55:53.008852+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-08T11:55:53.008852+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "7c85a9087eabbf4b7b0f82fb81b010a4"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:55:53.008864+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.267981+00:00",
+    "updated_at_utc": "2026-10-08T11:55:53.008852+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-08T11:55:53.008852+00:00",
+    "last_started_at": "2026-10-08T11:55:53.008852+00:00",
+    "last_finished_at": "2026-10-08T11:55:53.008852+00:00",
+    "last_success_at_utc": "2026-10-08T11:55:53.008852+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 8,
+    "_cell_idx": 8,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249920:video3": {
+    "task_id": "1222249920:video3",
+    "chapter_id": "1222249920",
+    "title": "独立实践项目：在虚拟机中安装  Windows操作系统",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.267990+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.267993+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.267996+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.267996+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 8,
+    "_cell_idx": 8,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249923": {
+    "task_id": "1222249923",
+    "chapter_id": "1222249923",
+    "title": "任务3.1 掌握 WPS文档编辑排版技法",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.268005+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.268007+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.268012+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.268012+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 10,
+    "_cell_idx": 10,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249923:video2": {
+    "task_id": "1222249923:video2",
+    "chapter_id": "1222249923",
+    "title": "任务3.1 掌握 WPS文档编辑排版技法",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.268017+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.268020+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.268022+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.268022+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 10,
+    "_cell_idx": 10,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249923:video3": {
+    "task_id": "1222249923:video3",
+    "chapter_id": "1222249923",
+    "title": "任务3.1 掌握 WPS文档编辑排版技法",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.268030+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.268032+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.268034+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.268034+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 10,
+    "_cell_idx": 10,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249925": {
+    "task_id": "1222249925",
+    "chapter_id": "1222249925",
+    "title": "任务3.2 精通 WPS 文字图文混排",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.268041+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.268043+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.268045+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.268045+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 11,
+    "_cell_idx": 11,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249925:video2": {
+    "task_id": "1222249925:video2",
+    "chapter_id": "1222249925",
+    "title": "任务3.2 精通 WPS 文字图文混排",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T11:27:13.268050+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T11:27:13.268053+00:00"
+    },
+    "created_at_utc": "2026-10-08T11:27:13.268055+00:00",
+    "updated_at_utc": "2026-10-08T11:27:13.268055+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 11,
+    "_cell_idx": 11,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249868": {
+    "task_id": "1222249868",
+    "chapter_id": "1222249868",
+    "title": "任务1.2 探索信息的数字化表达",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T14:32:28.433437+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-08T14:32:28.433437+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "e5a760c01c1ae98b9ec31b351bf55e66"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:32:28.433444+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445397+00:00",
+    "updated_at_utc": "2026-10-08T14:32:28.433437+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-08T14:32:28.433437+00:00",
+    "last_started_at": "2026-10-08T14:32:28.433437+00:00",
+    "last_finished_at": "2026-10-08T14:32:28.433437+00:00",
+    "last_success_at_utc": "2026-10-08T14:32:28.433437+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 2,
+    "_cell_idx": 2,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249868:video2": {
+    "task_id": "1222249868:video2",
+    "chapter_id": "1222249868",
+    "title": "任务1.2 探索信息的数字化表达",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T15:16:40.241545+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-08T15:16:40.241545+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "aeedce966602f47c61e340e10134f6a4"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T15:16:40.241554+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445408+00:00",
+    "updated_at_utc": "2026-10-08T15:16:40.241545+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-08T15:16:40.241545+00:00",
+    "last_started_at": "2026-10-08T15:16:40.241545+00:00",
+    "last_finished_at": "2026-10-08T15:16:40.241545+00:00",
+    "last_success_at_utc": "2026-10-08T15:16:40.241545+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 2,
+    "_cell_idx": 2,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249871": {
+    "task_id": "1222249871",
+    "chapter_id": "1222249871",
+    "title": "任务1.3 洞见信息的计算机硬件",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T05:18:34.138781+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-09T05:18:34.138792+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445431+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445432+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445432+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 3,
+    "_cell_idx": 3,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249871:video2": {
+    "task_id": "1222249871:video2",
+    "chapter_id": "1222249871",
+    "title": "任务1.3 洞见信息的计算机硬件",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T05:24:16.429196+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-09T05:24:16.429196+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "802e668cd0b2cbcb84620c81086fc3cf"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-09T05:24:16.429206+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445438+00:00",
+    "updated_at_utc": "2026-10-09T05:24:16.429196+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-09T05:24:16.429196+00:00",
+    "last_started_at": "2026-10-09T05:24:16.429196+00:00",
+    "last_finished_at": "2026-10-09T05:24:16.429196+00:00",
+    "last_success_at_utc": "2026-10-09T05:24:16.429196+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 3,
+    "_cell_idx": 3,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249871:video3": {
+    "task_id": "1222249871:video3",
+    "chapter_id": "1222249871",
+    "title": "任务1.3 洞见信息的计算机硬件",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T05:41:24.479795+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-09T05:41:24.479795+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "84d7fe2e6d523e58826adfe59c8b9714"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-09T05:41:24.479810+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445444+00:00",
+    "updated_at_utc": "2026-10-09T05:41:24.479795+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-09T05:41:24.479795+00:00",
+    "last_started_at": "2026-10-09T05:41:24.479795+00:00",
+    "last_finished_at": "2026-10-09T05:41:24.479795+00:00",
+    "last_success_at_utc": "2026-10-09T05:41:24.479795+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 3,
+    "_cell_idx": 3,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249900": {
+    "task_id": "1222249900",
+    "chapter_id": "1222249900",
+    "title": "任务2.1 走近神奇的操作系统",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 1,
+    "attempts": 1,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-09T06:15:05.541322+00:00",
+      "run_id": "local",
+      "source_detail": "passed_object_ids=1"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "local",
+      "observed_at_utc": "2026-10-09T06:15:05.541322+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "5702348d063ce1ac89fbc0dc1019e170"
+      ]
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-09T06:15:05.541330+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445454+00:00",
+    "updated_at_utc": "2026-10-09T06:15:05.541322+00:00",
+    "last_run_id": "local",
+    "last_run_at_utc": "2026-10-09T06:15:05.541322+00:00",
+    "last_started_at": "2026-10-09T06:15:05.541322+00:00",
+    "last_finished_at": "2026-10-09T06:15:05.541322+00:00",
+    "last_success_at_utc": "2026-10-09T06:15:05.541322+00:00",
+    "last_failure_at_utc": null,
+    "_ch_idx": 6,
+    "_cell_idx": 6,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249900:video2": {
+    "task_id": "1222249900:video2",
+    "chapter_id": "1222249900",
+    "title": "任务2.1 走近神奇的操作系统",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445457+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445459+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445460+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445460+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 6,
+    "_cell_idx": 6,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249914": {
+    "task_id": "1222249914",
+    "chapter_id": "1222249914",
+    "title": "任务2.2探秘计算机网络空间",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445463+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445465+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445466+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445466+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 7,
+    "_cell_idx": 7,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249914:video2": {
+    "task_id": "1222249914:video2",
+    "chapter_id": "1222249914",
+    "title": "任务2.2探秘计算机网络空间",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445468+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445469+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445471+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445471+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 7,
+    "_cell_idx": 7,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249914:video3": {
+    "task_id": "1222249914:video3",
+    "chapter_id": "1222249914",
+    "title": "任务2.2探秘计算机网络空间",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445473+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445475+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445476+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445476+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 7,
+    "_cell_idx": 7,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249914:video4": {
+    "task_id": "1222249914:video4",
+    "chapter_id": "1222249914",
+    "title": "任务2.2探秘计算机网络空间",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445479+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445480+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445481+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445481+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 7,
+    "_cell_idx": 7,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249927": {
+    "task_id": "1222249927",
+    "chapter_id": "1222249927",
+    "title": "任务3.3 美化设计WPS文字表格",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445494+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445496+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445497+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445497+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 12,
+    "_cell_idx": 12,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249927:video2": {
+    "task_id": "1222249927:video2",
+    "chapter_id": "1222249927",
+    "title": "任务3.3 美化设计WPS文字表格",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445500+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445502+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445503+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445503+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 12,
+    "_cell_idx": 12,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249929": {
+    "task_id": "1222249929",
+    "chapter_id": "1222249929",
+    "title": "独立实践项目：长文档排版",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445513+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445517+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445519+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445519+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 13,
+    "_cell_idx": 13,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249934": {
+    "task_id": "1222249934",
+    "chapter_id": "1222249934",
+    "title": "任务4.1 掌握WPS表格的基本操作",
+    "task_type": "video",
+    "status": "COMPLETED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-08T14:27:04.445534+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
+    },
+    "completion_evidence": {
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445537+00:00",
+      "detail": "server finished marker on the exact point (mint-time heal)",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445529+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445530+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445530+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 15,
+    "_cell_idx": 15,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249934:video2": {
+    "task_id": "1222249934:video2",
+    "chapter_id": "1222249934",
+    "title": "任务4.1 掌握WPS表格的基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445542+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445543+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445544+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445544+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 15,
+    "_cell_idx": 15,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249934:video3": {
+    "task_id": "1222249934:video3",
+    "chapter_id": "1222249934",
+    "title": "任务4.1 掌握WPS表格的基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445547+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445548+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445549+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445549+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 15,
+    "_cell_idx": 15,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249934:video4": {
+    "task_id": "1222249934:video4",
+    "chapter_id": "1222249934",
+    "title": "任务4.1 掌握WPS表格的基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445552+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445553+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445554+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445554+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 15,
+    "_cell_idx": 15,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249935": {
+    "task_id": "1222249935",
+    "chapter_id": "1222249935",
+    "title": "任务4.2 应用公式函数整理表格数据",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445558+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445559+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445560+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445560+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 16,
+    "_cell_idx": 16,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249935:video2": {
+    "task_id": "1222249935:video2",
+    "chapter_id": "1222249935",
+    "title": "任务4.2 应用公式函数整理表格数据",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445563+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445564+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445566+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445566+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 16,
+    "_cell_idx": 16,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249935:video3": {
+    "task_id": "1222249935:video3",
+    "chapter_id": "1222249935",
+    "title": "任务4.2 应用公式函数整理表格数据",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445568+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445569+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445571+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445571+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 16,
+    "_cell_idx": 16,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249935:video4": {
+    "task_id": "1222249935:video4",
+    "chapter_id": "1222249935",
+    "title": "任务4.2 应用公式函数整理表格数据",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445573+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445574+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445575+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445575+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 16,
+    "_cell_idx": 16,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249937": {
+    "task_id": "1222249937",
+    "chapter_id": "1222249937",
+    "title": "任务4.3 应用图表开展表格数据分析",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445580+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445581+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445582+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445582+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 17,
+    "_cell_idx": 17,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249937:video2": {
+    "task_id": "1222249937:video2",
+    "chapter_id": "1222249937",
+    "title": "任务4.3 应用图表开展表格数据分析",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445585+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445586+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445587+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445587+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 17,
+    "_cell_idx": 17,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249938": {
+    "task_id": "1222249938",
+    "chapter_id": "1222249938",
+    "title": "独立项目实践：动态图表数据分析",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445591+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445592+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445593+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445593+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 18,
+    "_cell_idx": 18,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249941": {
+    "task_id": "1222249941",
+    "chapter_id": "1222249941",
+    "title": "任务5.1 掌握WPS演示文稿基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445597+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445599+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445600+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445600+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 20,
+    "_cell_idx": 20,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249941:video2": {
+    "task_id": "1222249941:video2",
+    "chapter_id": "1222249941",
+    "title": "任务5.1 掌握WPS演示文稿基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445602+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445604+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445605+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445605+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 20,
+    "_cell_idx": 20,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249941:video3": {
+    "task_id": "1222249941:video3",
+    "chapter_id": "1222249941",
+    "title": "任务5.1 掌握WPS演示文稿基本操作",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445608+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445610+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445611+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445611+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 20,
+    "_cell_idx": 20,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249943": {
+    "task_id": "1222249943",
+    "chapter_id": "1222249943",
+    "title": "任务5.2 编辑制作并应用幻灯片母版",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445615+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445616+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445618+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445618+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 21,
+    "_cell_idx": 21,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249943:video2": {
+    "task_id": "1222249943:video2",
+    "chapter_id": "1222249943",
+    "title": "任务5.2 编辑制作并应用幻灯片母版",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445620+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445621+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445623+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445623+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 21,
+    "_cell_idx": 21,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944": {
+    "task_id": "1222249944",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445626+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445628+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445629+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445629+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944:video2": {
+    "task_id": "1222249944:video2",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445636+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445640+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445643+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445643+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944:video3": {
+    "task_id": "1222249944:video3",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445648+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445650+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445652+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445652+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944:video4": {
+    "task_id": "1222249944:video4",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445655+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445657+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445659+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445659+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249944:video5": {
+    "task_id": "1222249944:video5",
+    "chapter_id": "1222249944",
+    "title": "任务5.3 设计幻灯片并配置多媒体素材",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445667+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445668+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445669+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445669+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 22,
+    "_cell_idx": 22,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249947": {
+    "task_id": "1222249947",
+    "chapter_id": "1222249947",
+    "title": "独立项目实践：公司汇报演示文稿",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445673+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445675+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445676+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445676+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 23,
+    "_cell_idx": 23,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249951": {
+    "task_id": "1222249951",
+    "chapter_id": "1222249951",
+    "title": "任务6.1 驾驭日常信息搜索技巧",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445680+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445681+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445682+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445682+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 25,
+    "_cell_idx": 25,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249951:video2": {
+    "task_id": "1222249951:video2",
+    "chapter_id": "1222249951",
+    "title": "任务6.1 驾驭日常信息搜索技巧",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445685+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445686+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445687+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445687+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 25,
+    "_cell_idx": 25,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249951:video3": {
+    "task_id": "1222249951:video3",
+    "chapter_id": "1222249951",
+    "title": "任务6.1 驾驭日常信息搜索技巧",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445690+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445692+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445693+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445693+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 25,
+    "_cell_idx": 25,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249952": {
+    "task_id": "1222249952",
+    "chapter_id": "1222249952",
+    "title": "1、回顾内容：信息检索与调研",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445696+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445698+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445700+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445700+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 26,
+    "_cell_idx": 26,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249952:video2": {
+    "task_id": "1222249952:video2",
+    "chapter_id": "1222249952",
+    "title": "1、回顾内容：信息检索与调研",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445703+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445705+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445706+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445706+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 26,
+    "_cell_idx": 26,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249952:video3": {
+    "task_id": "1222249952:video3",
+    "chapter_id": "1222249952",
+    "title": "1、回顾内容：信息检索与调研",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445708+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445710+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445711+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445711+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 26,
+    "_cell_idx": 26,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249952:video4": {
+    "task_id": "1222249952:video4",
+    "chapter_id": "1222249952",
+    "title": "1、回顾内容：信息检索与调研",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445713+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445715+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445716+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445716+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 26,
+    "_cell_idx": 26,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249956": {
+    "task_id": "1222249956",
+    "chapter_id": "1222249956",
+    "title": "任务6.3 筑牢信息安全防护屏障",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445721+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445722+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445723+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445723+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 27,
+    "_cell_idx": 27,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249956:video2": {
+    "task_id": "1222249956:video2",
+    "chapter_id": "1222249956",
+    "title": "任务6.3 筑牢信息安全防护屏障",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445726+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445727+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445728+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445728+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 27,
+    "_cell_idx": 27,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249956:video3": {
+    "task_id": "1222249956:video3",
+    "chapter_id": "1222249956",
+    "title": "任务6.3 筑牢信息安全防护屏障",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445731+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445732+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445733+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445733+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 27,
+    "_cell_idx": 27,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249958": {
+    "task_id": "1222249958",
+    "chapter_id": "1222249958",
+    "title": "任务6.4 遵守信息法律法规与伦理规范",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445737+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445738+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445739+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445739+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 28,
+    "_cell_idx": 28,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249958:video2": {
+    "task_id": "1222249958:video2",
+    "chapter_id": "1222249958",
+    "title": "任务6.4 遵守信息法律法规与伦理规范",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445742+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445743+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445744+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445744+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 28,
+    "_cell_idx": 28,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249964": {
+    "task_id": "1222249964",
+    "chapter_id": "1222249964",
+    "title": "任务7.1 概览新一代信息技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445749+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445750+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445752+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445752+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 31,
+    "_cell_idx": 31,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249964:video2": {
+    "task_id": "1222249964:video2",
+    "chapter_id": "1222249964",
+    "title": "任务7.1 概览新一代信息技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445754+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445757+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445758+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445758+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 31,
+    "_cell_idx": 31,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249964:video3": {
+    "task_id": "1222249964:video3",
+    "chapter_id": "1222249964",
+    "title": "任务7.1 概览新一代信息技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445761+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445762+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445763+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445763+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 31,
+    "_cell_idx": 31,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249968": {
+    "task_id": "1222249968",
+    "chapter_id": "1222249968",
+    "title": "任务7.2 走进大数据技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445766+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445768+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445769+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445769+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 32,
+    "_cell_idx": 32,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249968:video2": {
+    "task_id": "1222249968:video2",
+    "chapter_id": "1222249968",
+    "title": "任务7.2 走进大数据技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445772+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445773+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445774+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445774+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 32,
+    "_cell_idx": 32,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249971": {
+    "task_id": "1222249971",
+    "chapter_id": "1222249971",
+    "title": "任务7.3 探秘人工智能技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445778+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445780+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445781+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445781+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 33,
+    "_cell_idx": 33,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249971:video2": {
+    "task_id": "1222249971:video2",
+    "chapter_id": "1222249971",
+    "title": "任务7.3 探秘人工智能技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445784+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445785+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445786+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445786+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 33,
+    "_cell_idx": 33,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  },
+  "1222249971:video3": {
+    "task_id": "1222249971:video3",
+    "chapter_id": "1222249971",
+    "title": "任务7.3 探秘人工智能技术",
+    "task_type": "video",
+    "status": "DISCOVERED",
+    "priority": 0,
+    "attempt_count": 0,
+    "attempts": 0,
+    "consecutive_failures": 0,
+    "max_attempts": 3,
+    "lease": {
+      "run_id": null,
+      "started_at_utc": null,
+      "expires_at_utc": null
+    },
+    "verification": {
+      "level": "NONE",
+      "verified_at_utc": null,
+      "run_id": null,
+      "source_detail": ""
+    },
+    "completion_evidence": {
+      "type": "NONE",
+      "source": "",
+      "run_id": "",
+      "observed_at_utc": "2026-10-08T14:27:04.445789+00:00",
+      "detail": "",
+      "passed_object_ids": []
+    },
+    "failure": {
+      "stage": "",
+      "run_id": "",
+      "detail": "",
+      "consecutive_failures": 0,
+      "occurred_at_utc": "2026-10-08T14:27:04.445791+00:00"
+    },
+    "created_at_utc": "2026-10-08T14:27:04.445792+00:00",
+    "updated_at_utc": "2026-10-08T14:27:04.445792+00:00",
+    "last_run_id": null,
+    "last_run_at_utc": null,
+    "last_started_at": null,
+    "last_finished_at": null,
+    "last_success_at_utc": null,
+    "last_failure_at_utc": null,
+    "_ch_idx": 33,
+    "_cell_idx": 33,
+    "rollback_count": 0,
+    "last_rollback_at_utc": ""
+  }
+}
