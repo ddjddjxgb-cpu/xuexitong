@@ -50,7 +50,7 @@ class TestTaskIsBlocked:
 class TestAlignChapterUrl:
     BASE = ("https://mooc1.chaoxing.com/mycourse/studentstudy"
             "?chapterId=1217304706&courseId=265997861&clazzid=151695658"
-            "&cpi=506830460&enc=1bc1bd778f9e00d924fe97b3c63f76f4"
+            "&cpi=506830460&enc=aaaabbbbccccdddd1111222233334444"
             "&mooc2=1&hidetype=0")
 
     def test_anchor_to_target_chapter(self):

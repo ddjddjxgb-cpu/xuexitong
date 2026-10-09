@@ -68,3 +68,4 @@ evidence/
 # 本地备份目录（我做状态快照时产生，不入库）
 state/_backup_*/
 state/accounts/**/registry/k/
+config/courses.json

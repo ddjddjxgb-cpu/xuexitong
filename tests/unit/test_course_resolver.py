@@ -18,23 +18,23 @@ from resolvers.course_resolver import (
 VALID_URL = (
     "https://mooc1.chaoxing.com/mycourse/studentstudy?"
     "chapterId=1217304706&courseId=265997861&clazzid=151695658"
-    "&cpi=506830460&enc=1bc1bd778f9e00d924fe97b3c63f76f4"
-    "&mooc2=1&hidetype=0&openc=9b5661be6351e4d46bc29bfa2d69236a"
+    "&cpi=506830460&enc=aaaabbbbccccdddd1111222233334444"
+    "&mooc2=1&hidetype=0&openc=eeeeffff000011112222333344445555"
 )
 
 # 同课程不同 URL 参数（chapterId 不同）
 SAME_COURSE_DIFF_URL = (
     "https://mooc1.chaoxing.com/mycourse/studentstudy?"
     "chapterId=1217304712&courseId=265997861&clazzid=151695658"
-    "&cpi=506830460&enc=1bc1bd778f9e00d924fe97b3c63f76f4"
-    "&mooc2=1&hidetype=0&openc=9b5661be6351e4d46bc29bfa2d69236a"
+    "&cpi=506830460&enc=aaaabbbbccccdddd1111222233334444"
+    "&mooc2=1&hidetype=0&openc=eeeeffff000011112222333344445555"
 )
 
 # 同课程 clazzId 大写（应被规范化为小写）
 SAME_COURSE_UPPER_CASE = (
     "https://mooc1.chaoxing.com/mycourse/studentstudy?"
     "chapterId=1217304706&courseId=265997861&clazzId=151695658"
-    "&cpi=506830460&enc=1bc1bd778f9e00d924fe97b3c63f76f4"
+    "&cpi=506830460&enc=aaaabbbbccccdddd1111222233334444"
     "&mooc2=1"
 )
 

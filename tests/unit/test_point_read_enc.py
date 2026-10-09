@@ -10,7 +10,7 @@
 from tvdp.tdvp import read_chapter_job_points
 
 
-AUTHOR_ENC = "1bc1bd778f9e00d924fe97b3c63f76f4"
+SAMPLE_ENC = "aaaabbbbccccdddd1111222233334444"
 
 
 class _UrlCapturingPage:
@@ -34,7 +34,7 @@ def test_point_read_url_uses_caller_enc_not_hardcoded_author_enc():
     url = page.urls[0]
     assert "enc=8435290bc259b61452b1463db54e4aba" in url, \
         "深读 URL 必须带调用方（当前账号）自己的 enc"
-    assert AUTHOR_ENC not in url, "不得再硬编码原作者的 enc"
+    assert SAMPLE_ENC not in url, "不得再硬编码原作者的 enc"
 
 
 def test_point_read_url_omits_enc_when_not_provided():
