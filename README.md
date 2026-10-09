@@ -370,3 +370,17 @@ python app/run.py --action run --course-url "https://mooc1.chaoxing.com/..." --c
 6. **Schedule 频率**：默认每日 UTC 02:00 触发一次。如需调整，修改 `.github/workflows/run.yml` 中的 cron 表达式。
 7. **TDVP Passive Probe**：依赖学习通页面 DOM 结构（`.task-item > .status` 数字标记），UI 改版可能需要调整解析正则。
 8. **Task ID 格式**：任务 ID 格式为 `<chapter_id>_<section_num>`（如 `1217304702_1_3`），由 Passive Probe 从页面标题提取。
+
+---
+
+## 免责声明
+
+本项目仅用于**个人课程的自动化学习辅助**、浏览器自动化研究与页面行为分析，
+不用于任何商业用途，不得用于批量代刷等损害平台或其他用户利益的行为。
+使用者应自行遵守学习通（超星）平台的服务协议与所在学校的相关规定；
+因使用本项目产生的一切后果由使用者本人承担。
+
+## 排障入口
+
+日志里看到看不懂的信号串？按信号在 **[docs/failure-signals.md](docs/failure-signals.md)**
+检索——每条均标注了【系统自动行为】与【何时需要人工】，全部来自真实运行日志。

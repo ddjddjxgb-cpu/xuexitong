@@ -120,6 +120,13 @@ IS_PASSED_SETTLE_S   = 20
 HEARTBEAT_DEAD_S     = 60
 STATUS_EVERY_S       = 10
 LOGIN_TIMEOUT_S      = 30
+# A5 stalled 守卫：视频 paused=False 但 currentTime 迟迟不前进（缓冲卡顿/播放器
+# 内部 stall）。R-04 只管 paused=True 的场景；这里在心跳判死（HEARTBEAT_DEAD_S=60s）
+# 之前先给恢复机会。设计参照 xuexitongScript v3 的 guardNoProgressMs（借鉴说明见
+# 对比分析报告），但恢复手段只用页面自己的 play()，与 R-04 同一条红线。
+STALLED_RESUME_S     = 25    # ct 静止多久后尝试恢复（60s 判死前留窗口）
+STALLED_COOLDOWN_S   = 15    # 两次恢复尝试的冷却
+MAX_STALLED_RESUME   = 3     # 单视频内最多恢复次数（耗尽后由 HEARTBEAT_DEAD 判定）
 # 章内多视频推进窗口：一段视频ended后给页面留一点时间自动切到「同章节下一个视频」。
 # 若窗口内观察到视频 src 变化（video_count++）就继续播下一段；超时无新 src 则视为
 # 最后一段，此时才判「本章真正完成」。4706 是 8 视频章，缺这个窗口会播完第1段就误退。
@@ -1261,6 +1268,9 @@ def run_test(args, params: "CourseParams | None" = None):
         # R-04 自动续播计数（进 evidence，供验收与事后归因）
         recovered_count = 0
         last_resume_at = None
+        # A5 stalled 守卫状态（独立于 R-04 的计数与冷却：paused 与 stalled 是两种故障）
+        stalled_resume_count = 0
+        last_stalled_resume_at = None
         # 个人自用改造：播放倍速 / 静音的目标值与「纠偏节流时间戳」
         # （站点可能在校验/切段后把 playbackRate 重置回 1、或取消静音，需定期复核）
         _rate_target = _playback_rate()
@@ -1346,10 +1356,32 @@ def run_test(args, params: "CourseParams | None" = None):
                 if abs(ct - last_ct) > 0.5:
                     last_ct = ct
                     last_ct_change_at = now
-                elif summary.get("duration") and (now - last_ct_change_at) >= HEARTBEAT_DEAD_S:
-                    evidence["failure_stage"] = "HEARTBEAT_DEAD"
-                    log(f"⚠️ Heartbeat dead at ct={ct:.0f}s")
-                    break
+                else:
+                    # A5 stalled 守卫：未 ended、paused=False，但 ct 静止超过
+                    # STALLED_RESUME_S —— 缓冲卡顿/播放器内部 stall。先调页面
+                    # 自己的 play() 尝试恢复；若恢复耗尽仍静止到 HEARTBEAT_DEAD_S，
+                    # 则照旧判死退出（守卫只加机会，不改失败判定）。
+                    if (summary.get("duration")
+                            and (now - last_ct_change_at) >= STALLED_RESUME_S
+                            and not ended_seen
+                            and not st.get("ended")
+                            and not st.get("paused")
+                            and stalled_resume_count < MAX_STALLED_RESUME
+                            and (last_stalled_resume_at is None
+                                 or (now - last_stalled_resume_at) >= STALLED_COOLDOWN_S)):
+                        stalled_resume_count += 1
+                        last_stalled_resume_at = now
+                        evidence["stalled_resume_count"] = stalled_resume_count
+                        if resume_paused_video(page, target_objectid):
+                            log(f"★ A5 stalled-resume #{stalled_resume_count} "
+                                f"(ct={ct:.0f}s 静止 {(now - last_ct_change_at):.0f}s, paused=False)")
+                        else:
+                            log(f"⚠️ A5 stalled-resume 未生效 "
+                                f"(ct={ct:.0f}s 静止 {(now - last_ct_change_at):.0f}s)")
+                    elif summary.get("duration") and (now - last_ct_change_at) >= HEARTBEAT_DEAD_S:
+                        evidence["failure_stage"] = "HEARTBEAT_DEAD"
+                        log(f"⚠️ Heartbeat dead at ct={ct:.0f}s")
+                        break
                 if st.get("ended") and not ended_seen:
                     ended_seen = True
                     ended_wall = now
