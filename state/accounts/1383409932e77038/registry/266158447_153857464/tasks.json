@@ -2736,10 +2736,10 @@
     "chapter_id": "1222249929",
     "title": "独立实践项目：长文档排版",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -2748,33 +2748,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T01:52:29.676673+00:00",
+      "run_id": "38014268162",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445513+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38014268162",
+      "observed_at_utc": "2026-10-10T01:52:29.676673+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "44132b4a06bb0d5eb65edf41fec248bc"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445517+00:00"
+      "occurred_at_utc": "2026-10-10T01:52:29.676680+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445519+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445519+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T01:52:29.676673+00:00",
+    "last_run_id": "38014268162",
+    "last_run_at_utc": "2026-10-10T01:52:29.676673+00:00",
+    "last_started_at": "2026-10-10T01:52:29.676673+00:00",
+    "last_finished_at": "2026-10-10T01:52:29.676673+00:00",
+    "last_success_at_utc": "2026-10-10T01:52:29.676673+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 13,
     "_cell_idx": 13,
@@ -2836,10 +2838,10 @@
     "chapter_id": "1222249934",
     "title": "任务4.1 掌握WPS表格的基本操作",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -2848,33 +2850,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T02:03:38.645129+00:00",
+      "run_id": "38014268162",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445542+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38014268162",
+      "observed_at_utc": "2026-10-10T02:03:38.645129+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "f3823e5ed8a73ef6ad45f5c4c887760e"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445543+00:00"
+      "occurred_at_utc": "2026-10-10T02:03:38.645136+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445544+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445544+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T02:03:38.645129+00:00",
+    "last_run_id": "38014268162",
+    "last_run_at_utc": "2026-10-10T02:03:38.645129+00:00",
+    "last_started_at": "2026-10-10T02:03:38.645129+00:00",
+    "last_finished_at": "2026-10-10T02:03:38.645129+00:00",
+    "last_success_at_utc": "2026-10-10T02:03:38.645129+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 15,
     "_cell_idx": 15,
@@ -2886,10 +2890,10 @@
     "chapter_id": "1222249934",
     "title": "任务4.1 掌握WPS表格的基本操作",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -2898,33 +2902,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T02:18:23.266704+00:00",
+      "run_id": "38014268162",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445547+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38014268162",
+      "observed_at_utc": "2026-10-10T02:18:23.266704+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "59c4389eaa0d67e005ca2c7948935c93"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445548+00:00"
+      "occurred_at_utc": "2026-10-10T02:18:23.266711+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445549+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445549+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T02:18:23.266704+00:00",
+    "last_run_id": "38014268162",
+    "last_run_at_utc": "2026-10-10T02:18:23.266704+00:00",
+    "last_started_at": "2026-10-10T02:18:23.266704+00:00",
+    "last_finished_at": "2026-10-10T02:18:23.266704+00:00",
+    "last_success_at_utc": "2026-10-10T02:18:23.266704+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 15,
     "_cell_idx": 15,
