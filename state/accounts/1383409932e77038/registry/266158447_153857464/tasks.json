@@ -2992,7 +2992,7 @@
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "PENDING",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 1,
     "attempts": 1,
@@ -3004,20 +3004,18 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "CONFLICT",
-      "verified_at_utc": "2026-10-10T11:24:12.473986+00:00",
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T17:52:43.258266+00:00",
       "run_id": "",
-      "source_detail": "live re-check confirmed pending"
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "CONFLICT",
-      "source": "isPassed",
-      "run_id": "38047276513",
-      "observed_at_utc": "2026-10-10T11:24:12.473980+00:00",
-      "detail": "live verification: now pending",
-      "passed_object_ids": [
-        "1abecea5061f4fb4c60e7e72755914c1"
-      ]
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-10T17:52:43.258273+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
+      "passed_object_ids": []
     },
     "failure": {
       "stage": "",
@@ -3044,7 +3042,7 @@
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "PENDING",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 1,
     "attempts": 1,
@@ -3056,20 +3054,18 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "CONFLICT",
-      "verified_at_utc": "2026-10-10T11:33:27.800378+00:00",
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T17:52:43.258279+00:00",
       "run_id": "",
-      "source_detail": "live re-check confirmed pending"
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "CONFLICT",
-      "source": "isPassed",
-      "run_id": "38047276513",
-      "observed_at_utc": "2026-10-10T11:33:27.800371+00:00",
-      "detail": "live verification: now pending",
-      "passed_object_ids": [
-        "b892ea2d207f7d59ddad01a6635a87a2"
-      ]
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
+      "run_id": "",
+      "observed_at_utc": "2026-10-10T17:52:43.258283+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
+      "passed_object_ids": []
     },
     "failure": {
       "stage": "",
@@ -3096,10 +3092,10 @@
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3108,33 +3104,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T17:58:49.533152+00:00",
+      "run_id": "38073242145",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445568+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38073242145",
+      "observed_at_utc": "2026-10-10T17:58:49.533152+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "49ada044acb0ebdec5104362972d2b54"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445569+00:00"
+      "occurred_at_utc": "2026-10-10T17:58:49.533162+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445571+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445571+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T17:58:49.533152+00:00",
+    "last_run_id": "38073242145",
+    "last_run_at_utc": "2026-10-10T17:58:49.533152+00:00",
+    "last_started_at": "2026-10-10T17:58:49.533152+00:00",
+    "last_finished_at": "2026-10-10T17:58:49.533152+00:00",
+    "last_success_at_utc": "2026-10-10T17:58:49.533152+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 16,
     "_cell_idx": 16,
@@ -3146,10 +3144,10 @@
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3158,33 +3156,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T18:04:26.565455+00:00",
+      "run_id": "38073242145",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445573+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38073242145",
+      "observed_at_utc": "2026-10-10T18:04:26.565455+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "d3d466d2e7237706827dfdb009af6b6e"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445574+00:00"
+      "occurred_at_utc": "2026-10-10T18:04:26.565465+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445575+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445575+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T18:04:26.565455+00:00",
+    "last_run_id": "38073242145",
+    "last_run_at_utc": "2026-10-10T18:04:26.565455+00:00",
+    "last_started_at": "2026-10-10T18:04:26.565455+00:00",
+    "last_finished_at": "2026-10-10T18:04:26.565455+00:00",
+    "last_success_at_utc": "2026-10-10T18:04:26.565455+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 16,
     "_cell_idx": 16,
@@ -3196,10 +3196,10 @@
     "chapter_id": "1222249937",
     "title": "任务4.3 应用图表开展表格数据分析",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3208,33 +3208,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T18:12:09.868309+00:00",
+      "run_id": "38073242145",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445580+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38073242145",
+      "observed_at_utc": "2026-10-10T18:12:09.868309+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "972f0574b2c7f09a263f039adb78f8a4"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445581+00:00"
+      "occurred_at_utc": "2026-10-10T18:12:09.868324+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445582+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445582+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T18:12:09.868309+00:00",
+    "last_run_id": "38073242145",
+    "last_run_at_utc": "2026-10-10T18:12:09.868309+00:00",
+    "last_started_at": "2026-10-10T18:12:09.868309+00:00",
+    "last_finished_at": "2026-10-10T18:12:09.868309+00:00",
+    "last_success_at_utc": "2026-10-10T18:12:09.868309+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 17,
     "_cell_idx": 17,
@@ -3246,10 +3248,10 @@
     "chapter_id": "1222249937",
     "title": "任务4.3 应用图表开展表格数据分析",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "COMPLETED",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3258,33 +3260,35 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T18:17:32.163584+00:00",
+      "run_id": "38073242145",
+      "source_detail": "passed_object_ids=1"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445585+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "SERVER_VERIFIED",
+      "source": "isPassed",
+      "run_id": "38073242145",
+      "observed_at_utc": "2026-10-10T18:17:32.163584+00:00",
+      "detail": "passed_object_ids=1",
+      "passed_object_ids": [
+        "9342d67b564914eb34185c3696de5e57"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445586+00:00"
+      "occurred_at_utc": "2026-10-10T18:17:32.163593+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445587+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445587+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T18:17:32.163584+00:00",
+    "last_run_id": "38073242145",
+    "last_run_at_utc": "2026-10-10T18:17:32.163584+00:00",
+    "last_started_at": "2026-10-10T18:17:32.163584+00:00",
+    "last_finished_at": "2026-10-10T18:17:32.163584+00:00",
+    "last_success_at_utc": "2026-10-10T18:17:32.163584+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 17,
     "_cell_idx": 17,
