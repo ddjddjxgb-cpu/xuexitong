@@ -2942,7 +2942,7 @@
     "chapter_id": "1222249934",
     "title": "任务4.1 掌握WPS表格的基本操作",
     "task_type": "video",
-    "status": "FAILED",
+    "status": "COMPLETED",
     "priority": 0,
     "attempt_count": 1,
     "attempts": 1,
@@ -2954,17 +2954,17 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "SERVER_VERIFIED",
+      "verified_at_utc": "2026-10-10T11:11:08.883428+00:00",
+      "run_id": "",
+      "source_detail": "live job points: server marked this point finished"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
+      "type": "SERVER_VERIFIED",
+      "source": "live job points",
       "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445552+00:00",
-      "detail": "",
+      "observed_at_utc": "2026-10-10T11:11:08.883434+00:00",
+      "detail": "server finished marker on the exact point (manual watch / server truth)",
       "passed_object_ids": []
     },
     "failure": {
@@ -2992,10 +2992,10 @@
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "PENDING",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3004,48 +3004,50 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "CONFLICT",
+      "verified_at_utc": "2026-10-10T11:24:12.473986+00:00",
+      "run_id": "",
+      "source_detail": "live re-check confirmed pending"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445558+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "CONFLICT",
+      "source": "isPassed",
+      "run_id": "38047276513",
+      "observed_at_utc": "2026-10-10T11:24:12.473980+00:00",
+      "detail": "live verification: now pending",
+      "passed_object_ids": [
+        "1abecea5061f4fb4c60e7e72755914c1"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445559+00:00"
+      "occurred_at_utc": "2026-10-10T11:20:57.292126+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445560+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445560+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T11:24:12.473986+00:00",
+    "last_run_id": "38047276513",
+    "last_run_at_utc": "2026-10-10T11:20:57.292119+00:00",
+    "last_started_at": "2026-10-10T11:20:57.292119+00:00",
+    "last_finished_at": "2026-10-10T11:20:57.292119+00:00",
+    "last_success_at_utc": "2026-10-10T11:20:57.292119+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 16,
     "_cell_idx": 16,
-    "rollback_count": 0,
-    "last_rollback_at_utc": ""
+    "rollback_count": 1,
+    "last_rollback_at_utc": "2026-10-10T11:24:12.473975+00:00"
   },
   "1222249935:video2": {
     "task_id": "1222249935:video2",
     "chapter_id": "1222249935",
     "title": "任务4.2 应用公式函数整理表格数据",
     "task_type": "video",
-    "status": "DISCOVERED",
+    "status": "PENDING",
     "priority": 0,
-    "attempt_count": 0,
-    "attempts": 0,
+    "attempt_count": 1,
+    "attempts": 1,
     "consecutive_failures": 0,
     "max_attempts": 3,
     "lease": {
@@ -3054,38 +3056,40 @@
       "expires_at_utc": null
     },
     "verification": {
-      "level": "NONE",
-      "verified_at_utc": null,
-      "run_id": null,
-      "source_detail": ""
+      "level": "CONFLICT",
+      "verified_at_utc": "2026-10-10T11:33:27.800378+00:00",
+      "run_id": "",
+      "source_detail": "live re-check confirmed pending"
     },
     "completion_evidence": {
-      "type": "NONE",
-      "source": "",
-      "run_id": "",
-      "observed_at_utc": "2026-10-08T14:27:04.445563+00:00",
-      "detail": "",
-      "passed_object_ids": []
+      "type": "CONFLICT",
+      "source": "isPassed",
+      "run_id": "38047276513",
+      "observed_at_utc": "2026-10-10T11:33:27.800371+00:00",
+      "detail": "live verification: now pending",
+      "passed_object_ids": [
+        "b892ea2d207f7d59ddad01a6635a87a2"
+      ]
     },
     "failure": {
       "stage": "",
       "run_id": "",
       "detail": "",
       "consecutive_failures": 0,
-      "occurred_at_utc": "2026-10-08T14:27:04.445564+00:00"
+      "occurred_at_utc": "2026-10-10T11:30:17.408219+00:00"
     },
     "created_at_utc": "2026-10-08T14:27:04.445566+00:00",
-    "updated_at_utc": "2026-10-08T14:27:04.445566+00:00",
-    "last_run_id": null,
-    "last_run_at_utc": null,
-    "last_started_at": null,
-    "last_finished_at": null,
-    "last_success_at_utc": null,
+    "updated_at_utc": "2026-10-10T11:33:27.800378+00:00",
+    "last_run_id": "38047276513",
+    "last_run_at_utc": "2026-10-10T11:30:17.408211+00:00",
+    "last_started_at": "2026-10-10T11:30:17.408211+00:00",
+    "last_finished_at": "2026-10-10T11:30:17.408211+00:00",
+    "last_success_at_utc": "2026-10-10T11:30:17.408211+00:00",
     "last_failure_at_utc": null,
     "_ch_idx": 16,
     "_cell_idx": 16,
-    "rollback_count": 0,
-    "last_rollback_at_utc": ""
+    "rollback_count": 1,
+    "last_rollback_at_utc": "2026-10-10T11:33:27.800366+00:00"
   },
   "1222249935:video3": {
     "task_id": "1222249935:video3",
